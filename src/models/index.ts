@@ -3,7 +3,12 @@
  * Import from here: import { User, Order, Product } from "./models/index.js";
  */
 
-export { User, type IUser } from "./User.js";
+export {
+  User,
+  type IUser,
+  type UserStatus,
+  type IUserStatusHistoryEntry,
+} from "./User.js";
 export { Product, type IProduct } from "./Product.js";
 export { Inventory, type IInventory } from "./Inventory.js";
 export { Cart, type ICart, type ICartItem } from "./Cart.js";
