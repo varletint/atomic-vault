@@ -60,4 +60,69 @@ export class UserController {
       data: user,
     });
   });
+
+  // 🔘 Account Status Transitions 🔘
+
+  /**
+   * PATCH /api/users/:userId/suspend
+   * Body: { reason }
+   */
+  static suspendUser = asyncHandler(async (req: Request, res: Response) => {
+    const { userId } = req.params as { userId: string };
+    const { reason } = req.body as { reason: string };
+
+    if (!reason) {
+      throw ValidationError("A reason is required to suspend a user.");
+    }
+
+    const user = await UserService.suspendUser(userId, reason);
+
+    res.status(200).json({
+      success: true,
+      message: "User suspended.",
+      data: user,
+    });
+  });
+
+  /**
+   * PATCH /api/users/:userId/reactivate
+   * Body: { reason }
+   */
+  static reactivateUser = asyncHandler(async (req: Request, res: Response) => {
+    const { userId } = req.params as { userId: string };
+    const { reason } = req.body as { reason: string };
+
+    if (!reason) {
+      throw ValidationError("A reason is required to reactivate a user.");
+    }
+
+    const user = await UserService.reactivateUser(userId, reason);
+
+    res.status(200).json({
+      success: true,
+      message: "User reactivated.",
+      data: user,
+    });
+  });
+
+  /**
+   * PATCH /api/users/:userId/deactivate
+   * Body: { reason }
+   */
+  static deactivateUser = asyncHandler(async (req: Request, res: Response) => {
+    const { userId } = req.params as { userId: string };
+    const { reason } = req.body as { reason: string };
+
+    if (!reason) {
+      throw ValidationError("A reason is required to deactivate a user.");
+    }
+
+    const user = await UserService.deactivateUser(userId, reason);
+
+    res.status(200).json({
+      success: true,
+      message: "User deactivated.",
+      data: user,
+    });
+  });
 }
