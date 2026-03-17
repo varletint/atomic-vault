@@ -43,4 +43,21 @@ export class UserController {
       data: user,
     });
   });
+
+  // 🔘 Email Verification 🔘
+
+  /**
+   * PATCH /api/users/:userId/verify-email
+   */
+  static verifyEmail = asyncHandler(async (req: Request, res: Response) => {
+    const { userId } = req.params as { userId: string };
+
+    const user = await UserService.verifyEmail(userId);
+
+    res.status(200).json({
+      success: true,
+      message: "Email verified. Account is now active.",
+      data: user,
+    });
+  });
 }
