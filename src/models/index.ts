@@ -1,0 +1,21 @@
+/**
+ * Barrel export for all models.
+ * Import from here: import { User, Order, Product } from "./models/index.js";
+ */
+
+export { User, type IUser } from "./User.js";
+export { Product, type IProduct } from "./Product.js";
+export { Inventory, type IInventory } from "./Inventory.js";
+export { Cart, type ICart, type ICartItem } from "./Cart.js";
+export {
+  Order,
+  type IOrder,
+  type IOrderItem,
+  type OrderStatus,
+} from "./Order.js";
+export {
+  Transaction,
+  type ITransaction,
+  type TransactionStatus,
+  type PaymentMethod,
+} from "./Transaction.js";
