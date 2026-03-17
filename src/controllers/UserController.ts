@@ -14,4 +14,33 @@ import { ValidationError } from "../utils/AppError.js";
  * All error handling is delegated to asyncHandler + the global errorHandler.
  * No try/catch blocks needed here.
  */
-export class UserController {}
+export class UserController {
+  // 🔘 Registration 🔘
+
+  /**
+   * POST /api/users/register
+   * Body: { name, email, password, address }
+   */
+  static register = asyncHandler(async (req: Request, res: Response) => {
+    const { name, email, password, address } = req.body as {
+      name: string;
+      email: string;
+      password: string;
+      address: {
+        street: string;
+        city: string;
+        state: string;
+        zip: string;
+        country: string;
+      };
+    };
+
+    const user = await UserService.register({ name, email, password, address });
+
+    res.status(201).json({
+      success: true,
+      message: "User registered successfully. Please verify your email.",
+      data: user,
+    });
+  });
+}
