@@ -157,4 +157,38 @@ export class UserController {
 
     res.status(200).json({ success: true, data: user });
   });
+
+  // 🔘 Profile Update 🔘
+
+  /**
+   * PATCH /api/users/:userId/profile
+   * Body: { name?, address? }
+   */
+  static updateProfile = asyncHandler(async (req: Request, res: Response) => {
+    const { userId } = req.params as { userId: string };
+    const { name, address } = req.body as {
+      name?: string;
+      address?: {
+        street: string;
+        city: string;
+        state: string;
+        zip: string;
+        country: string;
+      };
+    };
+
+    if (!name && !address) {
+      throw ValidationError(
+        "Provide at least one field to update (name or address)."
+      );
+    }
+
+    const user = await UserService.updateProfile(userId, { name, address });
+
+    res.status(200).json({
+      success: true,
+      message: "Profile updated.",
+      data: user,
+    });
+  });
 }
