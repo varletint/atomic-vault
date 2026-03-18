@@ -125,4 +125,36 @@ export class UserController {
       data: user,
     });
   });
+
+  // 🔘 Read Operations 🔘
+
+  /**
+   * GET /api/users/:userId
+   */
+  static getUserById = asyncHandler(async (req: Request, res: Response) => {
+    const { userId } = req.params as { userId: string };
+
+    const user = await UserService.getUserById(userId);
+
+    if (!user) {
+      throw ValidationError("User not found.");
+    }
+
+    res.status(200).json({ success: true, data: user });
+  });
+
+  /**
+   * GET /api/users/email/:email
+   */
+  static getUserByEmail = asyncHandler(async (req: Request, res: Response) => {
+    const { email } = req.params as { email: string };
+
+    const user = await UserService.getUserByEmail(email);
+
+    if (!user) {
+      throw ValidationError("User not found.");
+    }
+
+    res.status(200).json({ success: true, data: user });
+  });
 }
