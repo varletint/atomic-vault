@@ -3,31 +3,27 @@ import { asyncHandler } from "../middleware/asyncHandler.js";
 import { ProductService } from "../services/ProductService.js";
 import { ValidationError, NotFoundError } from "../utils/AppError.js";
 
-/**
- * ProductController
- *
- * Thin HTTP layer for product operations.
- * All error handling is delegated to asyncHandler + the global errorHandler.
- */
 export class ProductController {
-  // ─────────────────────────────────────────────────
-  // Create
-  // ─────────────────────────────────────────────────
-
-  /**
-   * POST /api/products
-   * Body: { name, description, price, category, imageUrl?, initialStock? }
-   */
   static createProduct = asyncHandler(async (req: Request, res: Response) => {
-    const { name, description, price, category, imageUrl, initialStock } =
-      req.body as {
-        name: string;
-        description: string;
-        price: number;
-        category: string;
-        imageUrl?: string;
-        initialStock?: number;
-      };
+    const {
+      name,
+      description,
+      price,
+      category,
+      compareAtPrice,
+      costPrice,
+      imageUrl,
+      initialStock,
+    } = req.body as {
+      name: string;
+      description: string;
+      price: number;
+      category: string;
+      compareAtPrice?: number;
+      costPrice?: number;
+      imageUrl?: string;
+      initialStock?: number;
+    };
 
     if (!name || !description || price === undefined || !category) {
       throw ValidationError(
@@ -39,36 +35,43 @@ export class ProductController {
       throw ValidationError("Price cannot be negative.");
     }
 
-    const product = await ProductService.createProduct({
+    const createData: Parameters<typeof ProductService.createProduct>[0] = {
       name,
       description,
       price,
       category,
-      imageUrl,
-      initialStock,
-    });
+    };
+    if (compareAtPrice !== undefined)
+      createData.compareAtPrice = compareAtPrice;
+    if (costPrice !== undefined) createData.costPrice = costPrice;
+    if (imageUrl !== undefined) createData.imageUrl = imageUrl;
+    if (initialStock !== undefined) createData.initialStock = initialStock;
+
+    const product = await ProductService.createProduct(createData);
 
     res.status(201).json({
       success: true,
-      message: "Product created successfully.",
+      message: "Product created.",
       data: product,
     });
   });
 
-  // ─────────────────────────────────────────────────
-  // Update
-  // ─────────────────────────────────────────────────
-
-  /**
-   * PATCH /api/products/:productId
-   * Body: { name?, description?, price?, category?, imageUrl? }
-   */
   static updateProduct = asyncHandler(async (req: Request, res: Response) => {
     const { productId } = req.params as { productId: string };
-    const { name, description, price, category, imageUrl } = req.body as {
+    const {
+      name,
+      description,
+      price,
+      compareAtPrice,
+      costPrice,
+      category,
+      imageUrl,
+    } = req.body as {
       name?: string;
       description?: string;
       price?: number;
+      compareAtPrice?: number;
+      costPrice?: number;
       category?: string;
       imageUrl?: string;
     };
@@ -77,6 +80,8 @@ export class ProductController {
       !name &&
       !description &&
       price === undefined &&
+      compareAtPrice === undefined &&
+      costPrice === undefined &&
       !category &&
       !imageUrl
     ) {
@@ -87,6 +92,9 @@ export class ProductController {
     if (name !== undefined) updateData.name = name;
     if (description !== undefined) updateData.description = description;
     if (price !== undefined) updateData.price = price;
+    if (compareAtPrice !== undefined)
+      updateData.compareAtPrice = compareAtPrice;
+    if (costPrice !== undefined) updateData.costPrice = costPrice;
     if (category !== undefined) updateData.category = category;
     if (imageUrl !== undefined) updateData.imageUrl = imageUrl;
 
@@ -99,71 +107,48 @@ export class ProductController {
     });
   });
 
-  // ─────────────────────────────────────────────────
-  // Activate / Deactivate
-  // ─────────────────────────────────────────────────
-
-  /**
-   * PATCH /api/products/:productId/deactivate
-   */
   static deactivateProduct = asyncHandler(
     async (req: Request, res: Response) => {
       const { productId } = req.params as { productId: string };
-
       const product = await ProductService.deactivateProduct(productId);
-
-      res.status(200).json({
-        success: true,
-        message: "Product deactivated.",
-        data: product,
-      });
+      res
+        .status(200)
+        .json({
+          success: true,
+          message: "Product deactivated.",
+          data: product,
+        });
     }
   );
 
-  /**
-   * PATCH /api/products/:productId/reactivate
-   */
   static reactivateProduct = asyncHandler(
     async (req: Request, res: Response) => {
       const { productId } = req.params as { productId: string };
-
       const product = await ProductService.reactivateProduct(productId);
-
-      res.status(200).json({
-        success: true,
-        message: "Product reactivated.",
-        data: product,
-      });
+      res
+        .status(200)
+        .json({
+          success: true,
+          message: "Product reactivated.",
+          data: product,
+        });
     }
   );
 
-  // ─────────────────────────────────────────────────
-  // Read: Single Product
-  // ─────────────────────────────────────────────────
-
-  /**
-   * GET /api/products/:productId
-   */
   static getProductById = asyncHandler(async (req: Request, res: Response) => {
     const { productId } = req.params as { productId: string };
-
     const product = await ProductService.getProductById(productId);
-
-    if (!product) {
-      throw NotFoundError("Product");
-    }
-
+    if (!product) throw NotFoundError("Product");
     res.status(200).json({ success: true, data: product });
   });
 
-  // ─────────────────────────────────────────────────
-  // Read: Catalog (Paginated)
-  // ─────────────────────────────────────────────────
+  static getProductBySku = asyncHandler(async (req: Request, res: Response) => {
+    const { sku } = req.params as { sku: string };
+    const product = await ProductService.getProductBySku(sku);
+    if (!product) throw NotFoundError("Product");
+    res.status(200).json({ success: true, data: product });
+  });
 
-  /**
-   * GET /api/products
-   * Query: category, minPrice, maxPrice, search, page, limit, sortBy, sortOrder
-   */
   static getProducts = asyncHandler(async (req: Request, res: Response) => {
     const query = req.query as Record<string, string | undefined>;
 
@@ -179,20 +164,11 @@ export class ProductController {
     };
 
     const result = await ProductService.getProducts(filters);
-
     res.status(200).json({ success: true, ...result });
   });
 
-  // ─────────────────────────────────────────────────
-  // Read: Categories
-  // ─────────────────────────────────────────────────
-
-  /**
-   * GET /api/products/categories
-   */
   static getCategories = asyncHandler(async (_req: Request, res: Response) => {
     const categories = await ProductService.getCategories();
-
     res.status(200).json({ success: true, data: categories });
   });
 }
