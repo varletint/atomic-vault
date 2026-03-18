@@ -4,3 +4,4 @@
  */
 
 export { UserService } from "./UserService.js";
+export { ProductService } from "./ProductService.js";
