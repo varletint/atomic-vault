@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { UserController } from "../controllers/UserController.js";
+import { UserController } from "../controllers/index.js";
+import { authMiddleware } from "../middleware/index.js";
 
 /**
  * User Routes
@@ -11,14 +12,18 @@ const router = Router();
 
 // ───── Public ─────
 router.post("/register", UserController.register);
+router.post("/login", UserController.login);
+router.post("/refresh", UserController.refreshTokens);
+router.post("/logout", UserController.logout);
 
 // ───── Email Verification ─────
 router.patch("/:userId/verify-email", UserController.verifyEmail);
 
-// ───── Profile ─────
+// ───── Read Operations ─────
+router.get("/me", authMiddleware, UserController.getMe);
 router.get("/:userId", UserController.getUserById);
 router.get("/email/:email", UserController.getUserByEmail);
-router.patch("/:userId/profile", UserController.updateProfile);
+router.patch("/:userId/profile", authMiddleware, UserController.updateProfile);
 
 // ───── Admin: Account Status Transitions ─────
 router.patch("/:userId/suspend", UserController.suspendUser);
