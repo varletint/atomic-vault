@@ -1,118 +1,107 @@
 import jwt from "jsonwebtoken";
-import { AppError } from "./AppError.js";
+import type { Types } from "mongoose";
+import type { UserStatus } from "../models/User.js";
+
+/**
+ * JWT Utility
+ *
+ * Handles generating and verifying secure tokens for authentication.
+ * Uses a dual-token strategy:
+ *   - Access Token:  Short-lived (15m), used for API authorization.
+ *   - Refresh Token: Long-lived (7d), used to silently re-issue access tokens.
+ */
+
+// In production, ALWAYS load these from environment variables.
+const ACCESS_SECRET =
+  process.env.JWT_ACCESS_SECRET || "fallback_access_secret_do_not_use";
+const REFRESH_SECRET =
+  process.env.JWT_REFRESH_SECRET || "fallback_refresh_secret_do_not_use";
+
+const ACCESS_EXPIRES_IN = process.env.JWT_ACCESS_EXPIRES_IN || "15m";
+const REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || "7d";
 
 // ─────────────────────────────────────────────────
-// Environment / Config
+// Types
 // ─────────────────────────────────────────────────
 
-const ACCESS_TOKEN_SECRET =
-  process.env.ACCESS_TOKEN_SECRET ?? "dev-access-secret";
-const REFRESH_TOKEN_SECRET =
-  process.env.REFRESH_TOKEN_SECRET ?? "dev-refresh-secret";
-
-const ACCESS_TOKEN_EXPIRY = process.env.ACCESS_TOKEN_EXPIRY ?? "15m";
-const REFRESH_TOKEN_EXPIRY = process.env.REFRESH_TOKEN_EXPIRY ?? "7d";
+export interface JwtPayload {
+  userId: string;
+  email: string;
+}
 
 // ─────────────────────────────────────────────────
-// parseExpirationToMs
+// Token Generation
 // ─────────────────────────────────────────────────
 
 /**
- * Converts a human-readable duration string into milliseconds.
- *
- * Supported units:
- *   s → seconds, m → minutes, h → hours, d → days, w → weeks
- *
- * @example
- *   parseExpirationToMs("15m")  // 900_000
- *   parseExpirationToMs("7d")   // 604_800_000
- *   parseExpirationToMs("1h")   // 3_600_000
+ * Generates a short-lived access token.
  */
-export function parseExpirationToMs(exp: string): number {
-  const match = exp.match(/^(\d+)(s|m|h|d|w)$/);
+export const generateAccessToken = (payload: JwtPayload): string => {
+  return jwt.sign(payload, ACCESS_SECRET, {
+    expiresIn: ACCESS_EXPIRES_IN,
+  } as jwt.SignOptions);
+};
 
+/**
+ * Generates a long-lived refresh token.
+ */
+export const generateRefreshToken = (payload: JwtPayload): string => {
+  return jwt.sign(payload, REFRESH_SECRET, {
+    expiresIn: REFRESH_EXPIRES_IN,
+  } as jwt.SignOptions);
+};
+
+// ─────────────────────────────────────────────────
+// Token Verification
+// ─────────────────────────────────────────────────
+
+/**
+ * Verifies and decodes a refresh token.
+ * Throws if the token is expired or invalid.
+ */
+export const verifyRefreshToken = (token: string): JwtPayload => {
+  return jwt.verify(token, REFRESH_SECRET) as JwtPayload;
+};
+
+/**
+ * Verifies and decodes an access token.
+ * Throws if the token is expired or invalid.
+ */
+export const verifyAccessToken = (token: string): JwtPayload => {
+  return jwt.verify(token, ACCESS_SECRET) as JwtPayload;
+};
+
+// ─────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────
+
+/**
+ * Converts a JWT expiration string (e.g. "7d", "15m", "1h") to milliseconds.
+ * Useful for setting cookie `maxAge`.
+ */
+export const parseExpirationToMs = (expiry: string): number => {
+  const match = expiry.match(/^(\d+)([smhd])$/);
   if (!match) {
-    throw new AppError(
-      `Invalid expiration format: "${exp}". Expected pattern: <number><s|m|h|d|w>.`,
-      400,
-      "INVALID_EXPIRATION"
-    );
+    throw new Error(`Invalid expiration format: "${expiry}"`);
   }
 
   const value = parseInt(match[1]!, 10);
   const unit = match[2]!;
 
   const multipliers: Record<string, number> = {
-    s: 1_000,
-    m: 60_000,
-    h: 3_600_000,
-    d: 86_400_000,
-    w: 604_800_000,
+    s: 1000,
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000,
   };
 
   return value * multipliers[unit]!;
-}
-
-// ─────────────────────────────────────────────────
-// generateAccessToken
-// ─────────────────────────────────────────────────
+};
 
 /**
- * Signs a short-lived JWT intended for API authentication.
- *
- * @param payload - Data to embed in the token (e.g. `{ userId, email }`).
- * @returns Signed JWT string.
+ * Returns the configured expiration strings for use in cookie settings.
  */
-export function generateAccessToken(payload: Record<string, unknown>): string {
-  return jwt.sign(payload, ACCESS_TOKEN_SECRET, {
-    expiresIn: ACCESS_TOKEN_EXPIRY,
-  });
-}
-
-// ─────────────────────────────────────────────────
-// generateRefreshToken
-// ─────────────────────────────────────────────────
-
-/**
- * Signs a long-lived JWT used to obtain new access tokens.
- *
- * @param payload - Data to embed in the token (e.g. `{ userId }`).
- * @returns Signed JWT string.
- */
-export function generateRefreshToken(payload: Record<string, unknown>): string {
-  return jwt.sign(payload, REFRESH_TOKEN_SECRET, {
-    expiresIn: REFRESH_TOKEN_EXPIRY,
-  });
-}
-
-// ─────────────────────────────────────────────────
-// verifyRefreshToken
-// ─────────────────────────────────────────────────
-
-/**
- * Verifies and decodes a refresh token.
- *
- * @param token - The raw JWT string.
- * @returns The decoded payload.
- * @throws AppError (401) if the token is invalid or expired.
- */
-export function verifyRefreshToken(token: string): jwt.JwtPayload {
-  try {
-    const decoded = jwt.verify(token, REFRESH_TOKEN_SECRET);
-
-    if (typeof decoded === "string") {
-      throw new AppError("Unexpected token format.", 401, "INVALID_TOKEN");
-    }
-
-    return decoded;
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-
-    // jsonwebtoken throws generic errors for expired / malformed tokens
-    throw new AppError(
-      "Refresh token is invalid or expired.",
-      401,
-      "INVALID_REFRESH_TOKEN"
-    );
-  }
-}
+export const getExpirationConfig = () => ({
+  accessExpiresIn: ACCESS_EXPIRES_IN,
+  refreshExpiresIn: REFRESH_EXPIRES_IN,
+});

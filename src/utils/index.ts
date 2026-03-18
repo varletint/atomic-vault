@@ -12,8 +12,11 @@ export {
 } from "./AppError.js";
 
 export {
-  parseExpirationToMs,
   generateAccessToken,
   generateRefreshToken,
   verifyRefreshToken,
+  verifyAccessToken,
+  parseExpirationToMs,
+  getExpirationConfig,
+  type JwtPayload,
 } from "./jwt.js";
