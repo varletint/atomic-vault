@@ -1,15 +1,13 @@
 import mongoose, { Schema, type Document, type Types } from "mongoose";
 
-/**
- * Product Model
- * Represents an item available for purchase in the catalog.
- * Price is stored in kobo (integer) to avoid floating point issues.
- */
 export interface IProduct extends Document {
   _id: Types.ObjectId;
+  sku: string;
   name: string;
   description: string;
-  price: number; // stored in kobo (e.g., 1999 = $19.99)
+  price: number;
+  compareAtPrice?: number;
+  costPrice?: number;
   category: string;
   imageUrl?: string;
   isActive: boolean;
@@ -19,12 +17,27 @@ export interface IProduct extends Document {
 
 const productSchema = new Schema<IProduct>(
   {
+    sku: {
+      type: String,
+      required: true,
+      unique: true,
+      uppercase: true,
+      trim: true,
+    },
     name: { type: String, required: true, trim: true },
     description: { type: String, required: true },
     price: {
       type: Number,
       required: true,
       min: [0, "Price cannot be negative"],
+    },
+    compareAtPrice: {
+      type: Number,
+      min: [0, "Compare-at price cannot be negative"],
+    },
+    costPrice: {
+      type: Number,
+      min: [0, "Cost price cannot be negative"],
     },
     category: { type: String, required: true, trim: true },
     imageUrl: { type: String },
@@ -35,8 +48,8 @@ const productSchema = new Schema<IProduct>(
   }
 );
 
-// Indexes for catalog browsing
 productSchema.index({ category: 1, isActive: 1 });
 productSchema.index({ name: "text", description: "text" });
+productSchema.index({ sku: 1 }, { unique: true });
 
 export const Product = mongoose.model<IProduct>("Product", productSchema);
