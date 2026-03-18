@@ -20,3 +20,5 @@ export {
   getExpirationConfig,
   type JwtPayload,
 } from "./jwt.js";
+
+export { generateSku, parseSku, CATEGORY_PREFIXES } from "./sku.js";
