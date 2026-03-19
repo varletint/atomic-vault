@@ -41,7 +41,7 @@ function setAuthCookies(
  * No try/catch blocks needed here.
  */
 export class UserController {
-  // 🔘 Registration 🔘
+  //   Registration
 
   /**
    * POST /api/users/register
@@ -77,7 +77,7 @@ export class UserController {
     });
   });
 
-  // 🔘 Authentication 🔘
+  //   Authentication
 
   /**
    * POST /api/users/login
@@ -139,7 +139,7 @@ export class UserController {
     });
   });
 
-  // 🔘 Email Verification 🔘
+  //   Email Verification
 
   /**
    * PATCH /api/users/:userId/verify-email
@@ -156,7 +156,7 @@ export class UserController {
     });
   });
 
-  // 🔘 Account Status Transitions 🔘
+  //   Account Status Transitions
 
   /**
    * PATCH /api/users/:userId/suspend
@@ -221,7 +221,7 @@ export class UserController {
     });
   });
 
-  // 🔘 Read Operations 🔘
+  //   Read Operations
 
   /**
    * GET /api/users/me
@@ -270,7 +270,7 @@ export class UserController {
     res.status(200).json({ success: true, data: user });
   });
 
-  // 🔘 Profile Update 🔘
+  //   Profile Update
 
   /**
    * PATCH /api/users/:userId/profile
