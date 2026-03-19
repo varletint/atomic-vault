@@ -5,3 +5,4 @@
 
 export { UserService } from "./UserService.js";
 export { ProductService } from "./ProductService.js";
+export { InventoryService } from "./InventoryService.js";

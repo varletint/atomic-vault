@@ -5,3 +5,4 @@
 
 export { UserController } from "./UserController.js";
 export { ProductController } from "./ProductController.js";
+export { InventoryController } from "./InventoryController.js";
