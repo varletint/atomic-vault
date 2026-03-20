@@ -1,6 +1,5 @@
 import jwt from "jsonwebtoken";
-import type { Types } from "mongoose";
-import type { UserStatus } from "../models/User.js";
+import type { UserRole } from "../models/User.js";
 
 /**
  * JWT Utility
@@ -27,6 +26,9 @@ const REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || "7d";
 export interface JwtPayload {
   userId: string;
   email: string;
+  role: UserRole;
+  /** Present on newly issued tokens; used to invalidate refresh tokens server-side */
+  tokenVersion?: number;
 }
 
 // ─────────────────────────────────────────────────
