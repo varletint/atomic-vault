@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import {
   Order,
   type IOrder,
+  type IGuestContact,
   type OrderStatus,
   Cart,
   Product,
@@ -10,6 +11,45 @@ import {
 } from "../models/index.js";
 import { NotFoundError, ValidationError, FsmError } from "../utils/AppError.js";
 import { InventoryService } from "./InventoryService.js";
+import {
+  ORDER_GUEST_MAX_ITEMS_TOTAL_KOBO,
+  ORDER_GUEST_MAX_ITEMS_TOTAL_NGN,
+  GUEST_INSTANT_PAYMENT_METHODS,
+} from "../config/guestCheckout.js";
+
+const GUEST_PAYMENT_SET = new Set<string>(GUEST_INSTANT_PAYMENT_METHODS);
+
+function payableAmountKobo(order: {
+  totalAmount: number;
+  deliveryFee?: number;
+}): number {
+  return order.totalAmount + (order.deliveryFee ?? 0);
+}
+
+function isGuestOrder(order: {
+  checkoutType?: string;
+  user?: unknown;
+}): boolean {
+  return order.checkoutType === "GUEST" || order.user == null;
+}
+
+function normalizeGuestEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function validateGuestContact(contact: IGuestContact): IGuestContact {
+  const email = normalizeGuestEmail(contact.email);
+  const phone = contact.phone.trim().replace(/\s+/g, "");
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw ValidationError("A valid guest email is required.");
+  }
+  if (!phone || phone.length < 10) {
+    throw ValidationError(
+      "A valid guest phone number is required (at least 10 digits).",
+    );
+  }
+  return { email, phone };
+}
 
 const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   PENDING: ["CONFIRMED", "CANCELLED", "FAILED"],
@@ -61,6 +101,7 @@ export class OrderService {
           await InventoryService.reserveStock(
             item.product.toString(),
             item.quantity,
+            session,
           );
 
           const subtotal = product.price * item.quantity;
@@ -83,9 +124,11 @@ export class OrderService {
       const [order] = await Order.create(
         [
           {
+            checkoutType: "REGISTERED" as const,
             user: userId,
             items: orderItems,
             totalAmount,
+            deliveryFee: 0,
             status: "PENDING" as const,
             idempotencyKey,
             shippingAddress,
@@ -116,6 +159,118 @@ export class OrderService {
     }
   }
 
+  /**
+   * Guest checkout: no user account. Line items are sent in the request (no cart).
+   * Rules:
+   * - Sum of item subtotals ≤ ORDER_GUEST_MAX_ITEMS_TOTAL_NGN (excludes deliveryFee).
+   * - shippingAddress + guestContact (email, phone) required.
+   * - Payment must be instant (see GUEST_INSTANT_PAYMENT_METHODS) via processPayment.
+   */
+  static async createGuestOrder(params: {
+    idempotencyKey: string;
+    shippingAddress: IOrder["shippingAddress"];
+    guestContact: IGuestContact;
+    items: { productId: string; quantity: number }[];
+    deliveryFee?: number;
+  }): Promise<IOrder> {
+    const {
+      idempotencyKey,
+      shippingAddress,
+      guestContact: rawContact,
+      items,
+      deliveryFee = 0,
+    } = params;
+
+    if (!items?.length) {
+      throw ValidationError("At least one line item is required.");
+    }
+    if (deliveryFee < 0) {
+      throw ValidationError("Delivery fee cannot be negative.");
+    }
+
+    const guestContact = validateGuestContact(rawContact);
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const existingOrder = await Order.findOne({ idempotencyKey }).session(
+        session,
+      );
+      if (existingOrder) {
+        await session.commitTransaction();
+        return existingOrder.toObject() as IOrder;
+      }
+
+      const orderItems = await Promise.all(
+        items.map(async ({ productId, quantity }) => {
+          if (!quantity || quantity < 1) {
+            throw ValidationError("Each item must have quantity ≥ 1.");
+          }
+
+          const product = await Product.findById(productId).session(session);
+          if (!product) throw NotFoundError("Product");
+          if (!product.isActive) {
+            throw ValidationError(`Product ${product.name} is not available.`);
+          }
+
+          await InventoryService.reserveStock(productId, quantity, session);
+
+          const subtotal = product.price * quantity;
+
+          return {
+            product: product._id,
+            productName: product.name,
+            quantity,
+            pricePerUnit: product.price,
+            subtotal,
+          };
+        }),
+      );
+
+      const itemsSubtotal = orderItems.reduce((sum, row) => sum + row.subtotal, 0);
+
+      if (itemsSubtotal > ORDER_GUEST_MAX_ITEMS_TOTAL_KOBO) {
+        throw ValidationError(
+          `Guest checkout item total exceeds the maximum allowed (NGN ${ORDER_GUEST_MAX_ITEMS_TOTAL_NGN} for items, delivery not included).`,
+        );
+      }
+
+      const [order] = await Order.create(
+        [
+          {
+            checkoutType: "GUEST" as const,
+            guestContact,
+            items: orderItems,
+            totalAmount: itemsSubtotal,
+            deliveryFee,
+            status: "PENDING" as const,
+            idempotencyKey,
+            shippingAddress,
+            statusHistory: [
+              {
+                status: "PENDING" as const,
+                timestamp: new Date(),
+                note: "Guest order created",
+              },
+            ],
+          },
+        ],
+        { session },
+      );
+
+      if (!order) throw new Error("Failed to create order");
+
+      await session.commitTransaction();
+      return order.toObject() as IOrder;
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
+  }
+
   static async getOrderById(orderId: string): Promise<IOrder> {
     const order = await Order.findById(orderId).lean<IOrder>();
     if (!order) throw NotFoundError("Order");
@@ -126,6 +281,24 @@ export class OrderService {
     return Order.find({ user: userId })
       .sort({ createdAt: -1 })
       .lean<IOrder[]>();
+  }
+
+  /** Public order lookup for guest orders — email must match stored guestContact. */
+  static async getGuestOrderById(
+    orderId: string,
+    email: string,
+  ): Promise<IOrder> {
+    const order = await Order.findById(orderId).lean<IOrder | null>();
+    if (!order) throw NotFoundError("Order");
+    if (order.checkoutType !== "GUEST") {
+      throw ValidationError("This order is not a guest checkout.");
+    }
+    const normalized = normalizeGuestEmail(email);
+    const stored = order.guestContact?.email;
+    if (!stored || normalizeGuestEmail(stored) !== normalized) {
+      throw NotFoundError("Order");
+    }
+    return order;
   }
 
   static async transitionStatus(
@@ -199,6 +372,7 @@ export class OrderService {
         await InventoryService.releaseReservation(
           item.product.toString(),
           item.quantity,
+          session,
         );
       }
 
@@ -234,6 +408,7 @@ export class OrderService {
         await InventoryService.releaseReservation(
           item.product.toString(),
           item.quantity,
+          session,
         );
       }
 
@@ -275,6 +450,19 @@ export class OrderService {
         );
       }
 
+      if (isGuestOrder(order)) {
+        if (!GUEST_PAYMENT_SET.has(paymentMethod)) {
+          throw ValidationError(
+            "Guest checkout requires instant payment (card, USSD, bank transfer, or wallet). Cash on delivery or pay-in-store is not allowed.",
+          );
+        }
+      }
+
+      const chargeAmount = payableAmountKobo(order);
+      if (chargeAmount < 1) {
+        throw ValidationError("Order payable amount must be at least 1 kobo.");
+      }
+
       const existingTx = await Transaction.findOne({
         idempotencyKey,
       }).session(session);
@@ -286,10 +474,9 @@ export class OrderService {
         };
       }
 
-      const transactionData: any = {
+      const transactionData: Record<string, unknown> = {
         order: orderId,
-        user: order.user,
-        amount: order.totalAmount,
+        amount: chargeAmount,
         currency: "NGN",
         status: "SUCCESS" as const,
         paymentMethod,
@@ -297,15 +484,21 @@ export class OrderService {
         idempotencyKey,
         paidAt: new Date(),
       };
+      if (order.user) {
+        transactionData.user = order.user;
+      }
       if (providerRef !== undefined) transactionData.providerRef = providerRef;
 
-      const transaction = await Transaction.create(transactionData);
+      const [transaction] = await Transaction.create([transactionData], {
+        session,
+      });
       if (!transaction) throw new Error("Failed to create transaction");
 
       for (const item of order.items) {
         await InventoryService.commitReservation(
           item.product.toString(),
           item.quantity,
+          session,
         );
       }
 
