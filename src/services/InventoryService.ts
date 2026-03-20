@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+import mongoose, { type ClientSession } from "mongoose";
 import { Inventory, type IInventory, Product } from "../models/index.js";
 import { NotFoundError, ValidationError, FsmError } from "../utils/AppError.js";
 
@@ -29,10 +29,18 @@ function getInventoryState(inventory: IInventory): InventoryState {
 }
 
 export class InventoryService {
-  private static async ensureActiveProduct(productId: string): Promise<void> {
-    const product = await Product.findById(productId)
-      .select("_id isActive")
-      .lean<{ _id: unknown; isActive: boolean } | null>();
+  private static async ensureActiveProduct(
+    productId: string,
+    session?: ClientSession | null,
+  ): Promise<void> {
+    const product = session
+      ? await Product.findById(productId)
+          .select("_id isActive")
+          .session(session)
+          .lean<{ _id: unknown; isActive: boolean } | null>()
+      : await Product.findById(productId)
+          .select("_id isActive")
+          .lean<{ _id: unknown; isActive: boolean } | null>();
     if (!product) throw NotFoundError("Product");
     if (!product.isActive) {
       throw ValidationError(
@@ -73,18 +81,22 @@ export class InventoryService {
   static async reserveStock(
     productId: string,
     quantity: number,
+    session?: ClientSession | null,
   ): Promise<IInventory> {
     if (quantity <= 0)
       throw ValidationError("Quantity must be greater than zero.");
 
-    await InventoryService.ensureActiveProduct(productId);
+    await InventoryService.ensureActiveProduct(productId, session);
 
-    const session = await mongoose.startSession();
-    session.startTransaction();
+    const ownSession = !session;
+    const sess = session ?? (await mongoose.startSession());
+    if (ownSession) {
+      sess.startTransaction();
+    }
 
     try {
       const inventory = await Inventory.findOne({ product: productId }).session(
-        session,
+        sess,
       );
       if (!inventory) throw NotFoundError("Inventory");
 
@@ -101,33 +113,43 @@ export class InventoryService {
       assertValidTransition(currentState, "RESERVED");
 
       inventory.reserved += quantity;
-      await inventory.save({ session });
+      await inventory.save({ session: sess });
 
-      await session.commitTransaction();
+      if (ownSession) {
+        await sess.commitTransaction();
+      }
       return inventory.toObject() as IInventory;
     } catch (error) {
-      await session.abortTransaction();
+      if (ownSession) {
+        await sess.abortTransaction();
+      }
       throw error;
     } finally {
-      session.endSession();
+      if (ownSession) {
+        sess.endSession();
+      }
     }
   }
 
   static async releaseReservation(
     productId: string,
     quantity: number,
+    session?: ClientSession | null,
   ): Promise<IInventory> {
     if (quantity <= 0)
       throw ValidationError("Quantity must be greater than zero.");
 
-    await InventoryService.ensureActiveProduct(productId);
+    await InventoryService.ensureActiveProduct(productId, session);
 
-    const session = await mongoose.startSession();
-    session.startTransaction();
+    const ownSession = !session;
+    const sess = session ?? (await mongoose.startSession());
+    if (ownSession) {
+      sess.startTransaction();
+    }
 
     try {
       const inventory = await Inventory.findOne({ product: productId }).session(
-        session,
+        sess,
       );
       if (!inventory) throw NotFoundError("Inventory");
 
@@ -142,33 +164,43 @@ export class InventoryService {
       assertValidTransition(currentState, "AVAILABLE");
 
       inventory.reserved -= quantity;
-      await inventory.save({ session });
+      await inventory.save({ session: sess });
 
-      await session.commitTransaction();
+      if (ownSession) {
+        await sess.commitTransaction();
+      }
       return inventory.toObject() as IInventory;
     } catch (error) {
-      await session.abortTransaction();
+      if (ownSession) {
+        await sess.abortTransaction();
+      }
       throw error;
     } finally {
-      session.endSession();
+      if (ownSession) {
+        sess.endSession();
+      }
     }
   }
 
   static async commitReservation(
     productId: string,
     quantity: number,
+    session?: ClientSession | null,
   ): Promise<IInventory> {
     if (quantity <= 0)
       throw ValidationError("Quantity must be greater than zero.");
 
-    await InventoryService.ensureActiveProduct(productId);
+    await InventoryService.ensureActiveProduct(productId, session);
 
-    const session = await mongoose.startSession();
-    session.startTransaction();
+    const ownSession = !session;
+    const sess = session ?? (await mongoose.startSession());
+    if (ownSession) {
+      sess.startTransaction();
+    }
 
     try {
       const inventory = await Inventory.findOne({ product: productId }).session(
-        session,
+        sess,
       );
       if (!inventory) throw NotFoundError("Inventory");
 
@@ -191,15 +223,21 @@ export class InventoryService {
 
       inventory.reserved -= quantity;
       inventory.stock -= quantity;
-      await inventory.save({ session });
+      await inventory.save({ session: sess });
 
-      await session.commitTransaction();
+      if (ownSession) {
+        await sess.commitTransaction();
+      }
       return inventory.toObject() as IInventory;
     } catch (error) {
-      await session.abortTransaction();
+      if (ownSession) {
+        await sess.abortTransaction();
+      }
       throw error;
     } finally {
-      session.endSession();
+      if (ownSession) {
+        sess.endSession();
+      }
     }
   }
 }
