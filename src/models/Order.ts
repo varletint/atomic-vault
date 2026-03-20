@@ -33,6 +33,13 @@ export type OrderStatus =
   | "CANCELLED"
   | "FAILED";
 
+export type CheckoutType = "REGISTERED" | "GUEST";
+
+export interface IGuestContact {
+  email: string;
+  phone: string;
+}
+
 export interface IOrderItem {
   product: Types.ObjectId;
   productName: string; // snapshot — product name could change later
@@ -43,9 +50,15 @@ export interface IOrderItem {
 
 export interface IOrder extends Document {
   _id: Types.ObjectId;
-  user: Types.ObjectId;
+  checkoutType: CheckoutType;
+  /** Registered user id; unset for guest checkout */
+  user?: Types.ObjectId | null;
+  guestContact?: IGuestContact;
   items: IOrderItem[];
-  totalAmount: number; // sum of all subtotals, in kobo
+  /** Sum of line subtotals (items only), kobo — excludes deliveryFee */
+  totalAmount: number;
+  /** Delivery fee in kobo; not counted toward guest item cap */
+  deliveryFee?: number;
   status: OrderStatus;
   idempotencyKey: string; // prevents duplicate order creation
   shippingAddress: {
@@ -113,17 +126,41 @@ const shippingAddressSchema = new Schema(
     city: { type: String, required: true },
     state: { type: String, required: true },
     zip: { type: String, required: true },
-    country: { type: String, required: true, default: "US" },
+    country: { type: String, required: true, default: "NG" },
   },
   { _id: false }
 );
 
+const guestContactSchema = new Schema(
+  {
+    email: {
+      type: String,
+      required: true,
+      lowercase: true,
+      trim: true,
+    },
+    phone: { type: String, required: true, trim: true },
+  },
+  { _id: false },
+);
+
 const orderSchema = new Schema<IOrder>(
   {
+    checkoutType: {
+      type: String,
+      enum: ["REGISTERED", "GUEST"],
+      default: "REGISTERED",
+      required: true,
+    },
     user: {
       type: Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: false,
+      default: undefined,
+    },
+    guestContact: {
+      type: guestContactSchema,
+      required: false,
     },
     items: {
       type: [orderItemSchema],
@@ -137,6 +174,11 @@ const orderSchema = new Schema<IOrder>(
       type: Number,
       required: true,
       min: [0, "Total cannot be negative"],
+    },
+    deliveryFee: {
+      type: Number,
+      default: 0,
+      min: [0, "Delivery fee cannot be negative"],
     },
     status: {
       type: String,
@@ -171,5 +213,10 @@ const orderSchema = new Schema<IOrder>(
 orderSchema.index({ user: 1, createdAt: -1 }); // user's order history
 orderSchema.index({ status: 1 }); // filter by status (admin dashboard)
 orderSchema.index({ idempotencyKey: 1 }, { unique: true }); // prevent duplicates
+orderSchema.index({ checkoutType: 1, createdAt: -1 });
+orderSchema.index(
+  { "guestContact.email": 1, createdAt: -1 },
+  { sparse: true },
+);
 
 export const Order = mongoose.model<IOrder>("Order", orderSchema);

@@ -16,7 +16,9 @@ export {
   Order,
   type IOrder,
   type IOrderItem,
+  type IGuestContact,
   type OrderStatus,
+  type CheckoutType,
 } from "./Order.js";
 export {
   Transaction,

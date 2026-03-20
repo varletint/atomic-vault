@@ -42,7 +42,8 @@ export type PaymentMethod =
 export interface ITransaction extends Document {
   _id: Types.ObjectId;
   order: Types.ObjectId;
-  user: Types.ObjectId;
+  /** Absent for guest checkout orders */
+  user?: Types.ObjectId | null;
   amount: number; // in kobo
   currency: string;
   status: TransactionStatus;
@@ -68,7 +69,8 @@ const transactionSchema = new Schema<ITransaction>(
     user: {
       type: Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: false,
+      default: undefined,
     },
     amount: {
       type: Number,
