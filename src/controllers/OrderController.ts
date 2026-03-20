@@ -5,6 +5,64 @@ import { ValidationError } from "../utils/AppError.js";
 import type { PaymentMethod } from "../models/index.js";
 
 export class OrderController {
+  /**
+   * POST /api/orders/guest
+   * Guest checkout (no account). Body: idempotencyKey, shippingAddress, guestContact { email, phone }, items [{ productId, quantity }], deliveryFee? (kobo)
+   */
+  static createGuestOrder = asyncHandler(async (req: Request, res: Response) => {
+    const {
+      idempotencyKey,
+      shippingAddress,
+      guestContact,
+      items,
+      deliveryFee,
+    } = req.body as {
+      idempotencyKey: string;
+      shippingAddress: {
+        street: string;
+        city: string;
+        state: string;
+        zip: string;
+        country: string;
+      };
+      guestContact: { email: string; phone: string };
+      items: { productId: string; quantity: number }[];
+      deliveryFee?: number;
+    };
+
+    if (!idempotencyKey || !shippingAddress || !guestContact || !items) {
+      throw ValidationError(
+        "idempotencyKey, shippingAddress, guestContact, and items are required.",
+      );
+    }
+
+    const order = await OrderService.createGuestOrder({
+      idempotencyKey,
+      shippingAddress,
+      guestContact,
+      items,
+      deliveryFee,
+    });
+
+    res.status(201).json({
+      success: true,
+      message:
+        "Guest order created. Pay with an instant method (card, USSD, transfer, or wallet).",
+      data: order,
+    });
+  });
+
+  static getGuestOrder = asyncHandler(async (req: Request, res: Response) => {
+    const { orderId } = req.params as { orderId: string };
+    const email = req.query.email as string | undefined;
+    if (!email?.trim()) {
+      throw ValidationError("Query parameter `email` is required.");
+    }
+
+    const order = await OrderService.getGuestOrderById(orderId, email);
+    res.status(200).json({ success: true, data: order });
+  });
+
   static createOrder = asyncHandler(async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     if (!userId) throw ValidationError("User not authenticated.");

@@ -4,6 +4,9 @@ import { authMiddleware } from "../middleware/authMiddleware.js";
 
 const router = Router();
 
+router.post("/guest", OrderController.createGuestOrder);
+router.get("/guest/:orderId", OrderController.getGuestOrder);
+
 router.use(authMiddleware);
 
 router.post("/", OrderController.createOrder);
