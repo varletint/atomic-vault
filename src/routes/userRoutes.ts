@@ -16,8 +16,13 @@ router.post("/login", UserController.login);
 router.post("/refresh", UserController.refreshTokens);
 router.post("/logout", UserController.logout);
 
-// ───── Email Verification ─────
-router.patch("/:userId/verify-email", UserController.verifyEmail);
+// ───── Email Verification (admin) ─────
+router.patch(
+  "/:userId/verify-email",
+  authMiddleware,
+  requireRole("ADMIN"),
+  UserController.verifyEmail
+);
 
 // ───── Read Operations ─────
 router.get("/me", authMiddleware, UserController.getMe);
