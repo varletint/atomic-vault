@@ -29,6 +29,18 @@ function getInventoryState(inventory: IInventory): InventoryState {
 }
 
 export class InventoryService {
+  private static async ensureActiveProduct(productId: string): Promise<void> {
+    const product = await Product.findById(productId)
+      .select("_id isActive")
+      .lean<{ _id: unknown; isActive: boolean } | null>();
+    if (!product) throw NotFoundError("Product");
+    if (!product.isActive) {
+      throw ValidationError(
+        "Cannot modify inventory for an inactive product. Reactivate it first.",
+      );
+    }
+  }
+
   static async getByProductId(productId: string): Promise<IInventory> {
     const inventory = await Inventory.findOne({
       product: productId,
@@ -41,8 +53,7 @@ export class InventoryService {
     productId: string,
     quantity: number,
   ): Promise<IInventory> {
-    const product = await Product.findById(productId).lean();
-    if (!product) throw NotFoundError("Product");
+    await InventoryService.ensureActiveProduct(productId);
 
     const inventory = await Inventory.findOne({ product: productId });
     if (!inventory) throw NotFoundError("Inventory");
@@ -65,6 +76,8 @@ export class InventoryService {
   ): Promise<IInventory> {
     if (quantity <= 0)
       throw ValidationError("Quantity must be greater than zero.");
+
+    await InventoryService.ensureActiveProduct(productId);
 
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -107,6 +120,8 @@ export class InventoryService {
     if (quantity <= 0)
       throw ValidationError("Quantity must be greater than zero.");
 
+    await InventoryService.ensureActiveProduct(productId);
+
     const session = await mongoose.startSession();
     session.startTransaction();
 
@@ -145,6 +160,8 @@ export class InventoryService {
   ): Promise<IInventory> {
     if (quantity <= 0)
       throw ValidationError("Quantity must be greater than zero.");
+
+    await InventoryService.ensureActiveProduct(productId);
 
     const session = await mongoose.startSession();
     session.startTransaction();
