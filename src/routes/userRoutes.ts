@@ -1,6 +1,10 @@
 import { Router } from "express";
 import { UserController } from "../controllers/index.js";
-import { authMiddleware, requireRole } from "../middleware/index.js";
+import {
+  authMiddleware,
+  requireRole,
+  requireSelfOrAdmin,
+} from "../middleware/index.js";
 
 /**
  * User Routes
@@ -26,8 +30,18 @@ router.patch(
 
 // ───── Read Operations ─────
 router.get("/me", authMiddleware, UserController.getMe);
-router.get("/:userId", UserController.getUserById);
-router.get("/email/:email", UserController.getUserByEmail);
+router.get(
+  "/:userId",
+  authMiddleware,
+  requireSelfOrAdmin({ type: "userId" }),
+  UserController.getUserById
+);
+router.get(
+  "/email/:email",
+  authMiddleware,
+  requireSelfOrAdmin({ type: "email" }),
+  UserController.getUserByEmail
+);
 router.patch("/:userId/profile", authMiddleware, UserController.updateProfile);
 
 // ───── Admin: Account Status Transitions ─────
