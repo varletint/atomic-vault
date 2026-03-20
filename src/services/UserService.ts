@@ -72,13 +72,52 @@ function assertValidTransition(current: UserStatus, next: UserStatus): void {
 /**
  * Generates an access + refresh token pair for a given user.
  */
+function getTokenVersion(user: IUser): number {
+  return user.auth?.tokenVersion ?? 0;
+}
+
 function issueTokens(user: IUser): AuthTokens {
-  const payload = { userId: user._id.toString(), email: user.email };
+  const payload = {
+    userId: user._id.toString(),
+    email: user.email,
+    role: user.role,
+    tokenVersion: getTokenVersion(user),
+  };
 
   return {
     accessToken: generateAccessToken(payload),
     refreshToken: generateRefreshToken(payload),
   };
+}
+
+/** Max failed password attempts before lockout (env: AUTH_MAX_FAILED_LOGINS, default 5) */
+const MAX_FAILED_LOGIN_ATTEMPTS = Math.max(
+  1,
+  parseInt(process.env.AUTH_MAX_FAILED_LOGINS ?? "5", 10) || 5
+);
+
+/** Lockout duration in minutes after threshold (env: AUTH_LOCKOUT_MINUTES, default 15) */
+const LOCKOUT_MINUTES = Math.max(
+  1,
+  parseInt(process.env.AUTH_LOCKOUT_MINUTES ?? "15", 10) || 15
+);
+
+const LOCKOUT_MS = LOCKOUT_MINUTES * 60 * 1000;
+
+function bumpTokenVersion(user: IUser): void {
+  if (!user.auth) {
+    user.auth = {
+      failedLoginAttempts: 0,
+      tokenVersion: 0,
+      mfa: {
+        enabled: false,
+        method: "NONE",
+        backupCodesHash: [],
+      },
+    };
+  }
+  user.auth.tokenVersion = (user.auth.tokenVersion ?? 0) + 1;
+  (user as mongoose.Document).markModified("auth");
 }
 
 // ─────────────────────────────────────────────────
@@ -169,22 +208,51 @@ export class UserService {
    * @param password - Raw password to compare.
    * @returns The user document + JWT tokens.
    */
-  static async login(email: string, password: string): Promise<AuthResponse> {
-    // Fetch user WITH password for comparison
-    const user = await User.findOne({
-      email: email.toLowerCase().trim(),
-    })
-      .select("+password")
-      .lean<IUser & { password: string }>();
+  static async login(
+    email: string,
+    password: string,
+    meta?: { ip?: string; userAgent?: string }
+  ): Promise<AuthResponse> {
+    const normalizedEmail = email.toLowerCase().trim();
+
+    const user = await User.findOne({ email: normalizedEmail }).select(
+      "+password"
+    );
 
     if (!user) {
       throw NotFoundError("User");
     }
 
-    // Verify password using bcrypt
+    const now = new Date();
+    const lockedUntil = user.auth?.lockedUntil;
+    if (lockedUntil && lockedUntil > now) {
+      throw ForbiddenError(
+        "Account temporarily locked due to failed login attempts. Try again later."
+      );
+    }
+
     const isValid = await bcrypt.compare(password, user.password);
 
     if (!isValid) {
+      const attempts = (user.auth?.failedLoginAttempts ?? 0) + 1;
+      if (!user.auth) {
+        user.auth = {
+          failedLoginAttempts: attempts,
+          tokenVersion: 0,
+          mfa: {
+            enabled: false,
+            method: "NONE",
+            backupCodesHash: [],
+          },
+        };
+      } else {
+        user.auth.failedLoginAttempts = attempts;
+      }
+      if (attempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
+        user.auth.lockedUntil = new Date(now.getTime() + LOCKOUT_MS);
+      }
+      user.markModified("auth");
+      await user.save();
       throw ValidationError("Invalid email or password.");
     }
 
@@ -193,9 +261,31 @@ export class UserService {
       throw ForbiddenError(`Login denied. Account status is "${user.status}".`);
     }
 
-    // Strip password before returning
-    const safeUser = { ...user };
-    delete (safeUser as any).password;
+    if (!user.auth) {
+      user.auth = {
+        failedLoginAttempts: 0,
+        tokenVersion: 0,
+        mfa: {
+          enabled: false,
+          method: "NONE",
+          backupCodesHash: [],
+        },
+      };
+    }
+    user.auth.failedLoginAttempts = 0;
+    user.auth.lockedUntil = undefined;
+    user.auth.lastLoginAt = now;
+    if (meta?.ip) {
+      user.auth.lastLoginIp = meta.ip;
+    }
+    if (meta?.userAgent) {
+      user.auth.lastLoginDevice = meta.userAgent.slice(0, 512);
+    }
+    user.markModified("auth");
+    await user.save();
+
+    const safeUser = user.toObject();
+    delete (safeUser as { password?: string }).password;
 
     const tokens = issueTokens(safeUser as IUser);
 
@@ -210,6 +300,7 @@ export class UserService {
    */
   static async refreshTokens(token: string): Promise<AuthTokens> {
     const decoded = verifyRefreshToken(token);
+    const versionInToken = decoded.tokenVersion ?? 0;
 
     const user = await User.findById(decoded.userId)
       .select("-password")
@@ -221,6 +312,11 @@ export class UserService {
 
     if (user.status === "DEACTIVATED") {
       throw ForbiddenError("Account is deactivated. Token refresh denied.");
+    }
+
+    const currentVersion = getTokenVersion(user);
+    if (versionInToken !== currentVersion) {
+      throw ForbiddenError("Session expired. Please sign in again.");
     }
 
     return issueTokens(user);
@@ -262,6 +358,10 @@ export class UserService {
         historyEntry.reason = reason;
       }
       user.statusHistory.push(historyEntry);
+
+      if (nextStatus === "SUSPENDED" || nextStatus === "DEACTIVATED") {
+        bumpTokenVersion(user);
+      }
 
       await user.save({ session });
       await session.commitTransaction();

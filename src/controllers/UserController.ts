@@ -90,7 +90,10 @@ export class UserController {
       throw ValidationError("Email and password are required.");
     }
 
-    const { user, tokens } = await UserService.login(email, password);
+    const { user, tokens } = await UserService.login(email, password, {
+      ip: req.ip,
+      userAgent: req.get("user-agent") ?? undefined,
+    });
 
     setAuthCookies(res, tokens);
 
@@ -147,7 +150,9 @@ export class UserController {
   static verifyEmail = asyncHandler(async (req: Request, res: Response) => {
     const { userId } = req.params as { userId: string };
 
-    const user = await UserService.verifyEmail(userId);
+    const { user, tokens } = await UserService.verifyEmail(userId);
+
+    setAuthCookies(res, tokens);
 
     res.status(200).json({
       success: true,
