@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { UserController } from "../controllers/index.js";
-import { authMiddleware } from "../middleware/index.js";
+import { authMiddleware, requireRole } from "../middleware/index.js";
 
 /**
  * User Routes
@@ -26,8 +26,10 @@ router.get("/email/:email", UserController.getUserByEmail);
 router.patch("/:userId/profile", authMiddleware, UserController.updateProfile);
 
 // ───── Admin: Account Status Transitions ─────
-router.patch("/:userId/suspend", UserController.suspendUser);
-router.patch("/:userId/reactivate", UserController.reactivateUser);
-router.patch("/:userId/deactivate", UserController.deactivateUser);
+const adminOnly = [authMiddleware, requireRole("ADMIN")] as const;
+
+router.patch("/:userId/suspend", ...adminOnly, UserController.suspendUser);
+router.patch("/:userId/reactivate", ...adminOnly, UserController.reactivateUser);
+router.patch("/:userId/deactivate", ...adminOnly, UserController.deactivateUser);
 
 export default router;
