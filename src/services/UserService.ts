@@ -173,7 +173,9 @@ export class UserService {
     // Fetch user WITH password for comparison
     const user = await User.findOne({
       email: email.toLowerCase().trim(),
-    }).lean<IUser & { password: string }>();
+    })
+      .select("+password")
+      .lean<IUser & { password: string }>();
 
     if (!user) {
       throw NotFoundError("User");
