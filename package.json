@@ -4,10 +4,12 @@
   "description": "A robust, high-integrity backend service architected for transactional reliability and strict ACID compliance.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --import tsx --test tests/**/*.test.mjs",
     "build": "tsc",
-    "dev": "tsc -watch",
-    "start": "node dist/index.js"
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "vercel-build": "tsc",
+    "type-check": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
@@ -16,14 +18,18 @@
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.17",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.5.0",
+    "@vercel/node": "^3.2.27",
+    "tsx": "^4.19.2",
     "typescript": "^5.9.3"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.3.0"
