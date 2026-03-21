@@ -7,6 +7,7 @@ import {
   Cart,
   Product,
   Transaction,
+  type ITransaction,
   type PaymentMethod,
 } from "../models/index.js";
 import { NotFoundError, ValidationError, FsmError } from "../utils/AppError.js";
@@ -65,6 +66,38 @@ function assertValidTransition(current: OrderStatus, next: OrderStatus): void {
   if (!allowed.includes(next)) {
     throw FsmError(current, next, allowed);
   }
+}
+
+type PaymentGatewayResult = {
+  success: boolean;
+  providerRef?: string;
+  failureReason?: string;
+  metadata?: Record<string, unknown>;
+};
+
+/**
+ * Placeholder for payment gateway integration.
+ * For now this simulates an approved charge and returns provider metadata.
+ */
+async function chargeViaProvider(params: {
+  amount: number;
+  currency: string;
+  paymentMethod: PaymentMethod;
+  provider: string;
+  providerRef?: string;
+}): Promise<PaymentGatewayResult> {
+  const result: PaymentGatewayResult = {
+    success: true,
+    metadata: {
+      provider: params.provider,
+      paymentMethod: params.paymentMethod,
+      simulated: true,
+    },
+  };
+  if (params.providerRef !== undefined) {
+    result.providerRef = params.providerRef;
+  }
+  return result;
 }
 
 export class OrderService {
@@ -436,7 +469,7 @@ export class OrderService {
     provider: string,
     idempotencyKey: string,
     providerRef?: string,
-  ): Promise<{ order: IOrder; transaction: any }> {
+  ): Promise<{ order: IOrder; transaction: ITransaction }> {
     const session = await mongoose.startSession();
     session.startTransaction();
 
@@ -478,11 +511,10 @@ export class OrderService {
         order: orderId,
         amount: chargeAmount,
         currency: "NGN",
-        status: "SUCCESS" as const,
+        status: "INITIATED" as const,
         paymentMethod,
         provider,
         idempotencyKey,
-        paidAt: new Date(),
       };
       if (order.user) {
         transactionData.user = order.user;
@@ -494,27 +526,76 @@ export class OrderService {
       });
       if (!transaction) throw new Error("Failed to create transaction");
 
-      for (const item of order.items) {
-        await InventoryService.commitReservation(
-          item.product.toString(),
-          item.quantity,
-          session,
-        );
-      }
+      transaction.status = "PROCESSING";
+      await transaction.save({ session });
 
-      order.status = "CONFIRMED";
-      order.statusHistory.push({
-        status: "CONFIRMED",
-        timestamp: new Date(),
-        note: "Payment successful",
-      });
+      const gatewayPayload: Parameters<typeof chargeViaProvider>[0] = {
+        amount: chargeAmount,
+        currency: "NGN",
+        paymentMethod,
+        provider,
+      };
+      if (providerRef !== undefined) {
+        gatewayPayload.providerRef = providerRef;
+      }
+      const gatewayResult = await chargeViaProvider(gatewayPayload);
+
+      if (!gatewayResult.success) {
+        transaction.status = "FAILED";
+        transaction.failureReason =
+          gatewayResult.failureReason ?? "Payment declined by provider.";
+        if (gatewayResult.metadata !== undefined) {
+          transaction.metadata = gatewayResult.metadata;
+        }
+        await transaction.save({ session });
+
+        for (const item of order.items) {
+          await InventoryService.releaseReservation(
+            item.product.toString(),
+            item.quantity,
+            session,
+          );
+        }
+
+        order.status = "FAILED";
+        order.statusHistory.push({
+          status: "FAILED",
+          timestamp: new Date(),
+          note: transaction.failureReason,
+        });
+      } else {
+        transaction.status = "SUCCESS";
+        transaction.paidAt = new Date();
+        if (!transaction.providerRef && gatewayResult.providerRef) {
+          transaction.providerRef = gatewayResult.providerRef;
+        }
+        if (gatewayResult.metadata !== undefined) {
+          transaction.metadata = gatewayResult.metadata;
+        }
+        await transaction.save({ session });
+
+        for (const item of order.items) {
+          await InventoryService.commitReservation(
+            item.product.toString(),
+            item.quantity,
+            session,
+          );
+        }
+
+        order.status = "CONFIRMED";
+        order.statusHistory.push({
+          status: "CONFIRMED",
+          timestamp: new Date(),
+          note: "Payment successful",
+        });
+      }
 
       await order.save({ session });
       await session.commitTransaction();
 
       return {
         order: order.toObject() as IOrder,
-        transaction: transaction.toObject(),
+        transaction: transaction.toObject() as ITransaction,
       };
     } catch (error) {
       await session.abortTransaction();
