@@ -1,6 +1,11 @@
 import { Router } from "express";
 import { InventoryController } from "../controllers/InventoryController.js";
 import { authMiddleware } from "../middleware/authMiddleware.js";
+import { validate } from "../middleware/validate.js";
+import {
+  adjustStockSchema,
+  stockQuantitySchema,
+} from "../schemas/inventorySchemas.js";
 
 const router = Router();
 
@@ -9,22 +14,26 @@ router.get("/:productId", InventoryController.getByProductId);
 router.patch(
   "/:productId/adjust",
   authMiddleware,
-  InventoryController.adjustStock,
+  validate(adjustStockSchema),
+  InventoryController.adjustStock
 );
 router.patch(
   "/:productId/reserve",
   authMiddleware,
-  InventoryController.reserveStock,
+  validate(stockQuantitySchema),
+  InventoryController.reserveStock
 );
 router.patch(
   "/:productId/release",
   authMiddleware,
-  InventoryController.releaseReservation,
+  validate(stockQuantitySchema),
+  InventoryController.releaseReservation
 );
 router.patch(
   "/:productId/commit",
   authMiddleware,
-  InventoryController.commitReservation,
+  validate(stockQuantitySchema),
+  InventoryController.commitReservation
 );
 
 export default router;

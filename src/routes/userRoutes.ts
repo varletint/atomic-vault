@@ -5,22 +5,21 @@ import {
   requireRole,
   requireSelfOrAdmin,
 } from "../middleware/index.js";
+import { validate } from "../middleware/validate.js";
+import {
+  registerSchema,
+  loginSchema,
+  reasonSchema,
+  updateProfileSchema,
+} from "../schemas/userSchemas.js";
 
-/**
- * User Routes
- *
- * Maps HTTP endpoints to UserController methods.
- * Prefix: /api/users
- */
 const router = Router();
 
-// ───── Public ─────
-router.post("/register", UserController.register);
-router.post("/login", UserController.login);
+router.post("/register", validate(registerSchema), UserController.register);
+router.post("/login", validate(loginSchema), UserController.login);
 router.post("/refresh", UserController.refreshTokens);
 router.post("/logout", UserController.logout);
 
-// ───── Email Verification (admin) ─────
 router.patch(
   "/:userId/verify-email",
   authMiddleware,
@@ -28,7 +27,6 @@ router.patch(
   UserController.verifyEmail
 );
 
-// ───── Read Operations ─────
 router.get("/me", authMiddleware, UserController.getMe);
 router.get(
   "/:userId",
@@ -42,13 +40,32 @@ router.get(
   requireSelfOrAdmin({ type: "email" }),
   UserController.getUserByEmail
 );
-router.patch("/:userId/profile", authMiddleware, UserController.updateProfile);
+router.patch(
+  "/:userId/profile",
+  authMiddleware,
+  validate(updateProfileSchema),
+  UserController.updateProfile
+);
 
-// ───── Admin: Account Status Transitions ─────
 const adminOnly = [authMiddleware, requireRole("ADMIN")] as const;
 
-router.patch("/:userId/suspend", ...adminOnly, UserController.suspendUser);
-router.patch("/:userId/reactivate", ...adminOnly, UserController.reactivateUser);
-router.patch("/:userId/deactivate", ...adminOnly, UserController.deactivateUser);
+router.patch(
+  "/:userId/suspend",
+  ...adminOnly,
+  validate(reasonSchema),
+  UserController.suspendUser
+);
+router.patch(
+  "/:userId/reactivate",
+  ...adminOnly,
+  validate(reasonSchema),
+  UserController.reactivateUser
+);
+router.patch(
+  "/:userId/deactivate",
+  ...adminOnly,
+  validate(reasonSchema),
+  UserController.deactivateUser
+);
 
 export default router;
