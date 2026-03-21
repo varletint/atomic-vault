@@ -9,9 +9,11 @@ import {
   Transaction,
   type ITransaction,
   type PaymentMethod,
+  User,
 } from "../models/index.js";
 import { NotFoundError, ValidationError, FsmError } from "../utils/AppError.js";
 import { InventoryService } from "./InventoryService.js";
+import { resolveGateway, type ChargeParams } from "./PaymentGateway.js";
 import {
   ORDER_GUEST_MAX_ITEMS_TOTAL_KOBO,
   ORDER_GUEST_MAX_ITEMS_TOTAL_NGN,
@@ -46,7 +48,7 @@ function validateGuestContact(contact: IGuestContact): IGuestContact {
   }
   if (!phone || phone.length < 10) {
     throw ValidationError(
-      "A valid guest phone number is required (at least 10 digits).",
+      "A valid guest phone number is required (at least 10 digits)."
     );
   }
   return { email, phone };
@@ -68,50 +70,31 @@ function assertValidTransition(current: OrderStatus, next: OrderStatus): void {
   }
 }
 
-type PaymentGatewayResult = {
-  success: boolean;
-  providerRef?: string;
-  failureReason?: string;
-  metadata?: Record<string, unknown>;
-};
-
-/**
- * Placeholder for payment gateway integration.
- * For now this simulates an approved charge and returns provider metadata.
- */
-async function chargeViaProvider(params: {
-  amount: number;
-  currency: string;
-  paymentMethod: PaymentMethod;
-  provider: string;
-  providerRef?: string;
-}): Promise<PaymentGatewayResult> {
-  const result: PaymentGatewayResult = {
-    success: true,
-    metadata: {
-      provider: params.provider,
-      paymentMethod: params.paymentMethod,
-      simulated: true,
-    },
-  };
-  if (params.providerRef !== undefined) {
-    result.providerRef = params.providerRef;
+async function resolveCustomerEmail(order: IOrder): Promise<string> {
+  if (order.guestContact?.email) {
+    return order.guestContact.email;
   }
-  return result;
+
+  if (order.user) {
+    const user = await User.findById(order.user).select("email").lean();
+    if (user?.email) return user.email;
+  }
+
+  throw ValidationError("Cannot resolve customer email for payment.");
 }
 
 export class OrderService {
   static async createOrder(
     userId: string,
     idempotencyKey: string,
-    shippingAddress: IOrder["shippingAddress"],
+    shippingAddress: IOrder["shippingAddress"]
   ): Promise<IOrder> {
     const session = await mongoose.startSession();
     session.startTransaction();
 
     try {
       const existingOrder = await Order.findOne({ idempotencyKey }).session(
-        session,
+        session
       );
       if (existingOrder) {
         await session.abortTransaction();
@@ -134,7 +117,7 @@ export class OrderService {
           await InventoryService.reserveStock(
             item.product.toString(),
             item.quantity,
-            session,
+            session
           );
 
           const subtotal = product.price * item.quantity;
@@ -146,12 +129,12 @@ export class OrderService {
             pricePerUnit: product.price,
             subtotal,
           };
-        }),
+        })
       );
 
       const totalAmount = orderItems.reduce(
         (sum, item) => sum + item.subtotal,
-        0,
+        0
       );
 
       const [order] = await Order.create(
@@ -174,7 +157,7 @@ export class OrderService {
             ],
           },
         ],
-        { session },
+        { session }
       );
 
       if (!order) throw new Error("Failed to create order");
@@ -228,7 +211,7 @@ export class OrderService {
 
     try {
       const existingOrder = await Order.findOne({ idempotencyKey }).session(
-        session,
+        session
       );
       if (existingOrder) {
         await session.commitTransaction();
@@ -258,14 +241,17 @@ export class OrderService {
             pricePerUnit: product.price,
             subtotal,
           };
-        }),
+        })
       );
 
-      const itemsSubtotal = orderItems.reduce((sum, row) => sum + row.subtotal, 0);
+      const itemsSubtotal = orderItems.reduce(
+        (sum, row) => sum + row.subtotal,
+        0
+      );
 
       if (itemsSubtotal > ORDER_GUEST_MAX_ITEMS_TOTAL_KOBO) {
         throw ValidationError(
-          `Guest checkout item total exceeds the maximum allowed (NGN ${ORDER_GUEST_MAX_ITEMS_TOTAL_NGN} for items, delivery not included).`,
+          `Guest checkout item total exceeds the maximum allowed (NGN ${ORDER_GUEST_MAX_ITEMS_TOTAL_NGN} for items, delivery not included).`
         );
       }
 
@@ -289,7 +275,7 @@ export class OrderService {
             ],
           },
         ],
-        { session },
+        { session }
       );
 
       if (!order) throw new Error("Failed to create order");
@@ -319,7 +305,7 @@ export class OrderService {
   /** Public order lookup for guest orders — email must match stored guestContact. */
   static async getGuestOrderById(
     orderId: string,
-    email: string,
+    email: string
   ): Promise<IOrder> {
     const order = await Order.findById(orderId).lean<IOrder | null>();
     if (!order) throw NotFoundError("Order");
@@ -337,7 +323,7 @@ export class OrderService {
   static async transitionStatus(
     orderId: string,
     nextStatus: OrderStatus,
-    note?: string,
+    note?: string
   ): Promise<IOrder> {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -375,7 +361,7 @@ export class OrderService {
     return OrderService.transitionStatus(
       orderId,
       "CONFIRMED",
-      "Payment confirmed",
+      "Payment confirmed"
     );
   }
 
@@ -387,7 +373,7 @@ export class OrderService {
     return OrderService.transitionStatus(
       orderId,
       "DELIVERED",
-      "Order delivered",
+      "Order delivered"
     );
   }
 
@@ -405,7 +391,7 @@ export class OrderService {
         await InventoryService.releaseReservation(
           item.product.toString(),
           item.quantity,
-          session,
+          session
         );
       }
 
@@ -441,7 +427,7 @@ export class OrderService {
         await InventoryService.releaseReservation(
           item.product.toString(),
           item.quantity,
-          session,
+          session
         );
       }
 
@@ -468,8 +454,12 @@ export class OrderService {
     paymentMethod: PaymentMethod,
     provider: string,
     idempotencyKey: string,
-    providerRef?: string,
-  ): Promise<{ order: IOrder; transaction: ITransaction }> {
+    callbackUrl?: string
+  ): Promise<{
+    order: IOrder;
+    transaction: ITransaction;
+    authorizationUrl: string;
+  }> {
     const session = await mongoose.startSession();
     session.startTransaction();
 
@@ -479,14 +469,14 @@ export class OrderService {
 
       if (order.status !== "PENDING") {
         throw ValidationError(
-          `Cannot process payment for order with status ${order.status}.`,
+          `Cannot process payment for order with status ${order.status}.`
         );
       }
 
       if (isGuestOrder(order)) {
         if (!GUEST_PAYMENT_SET.has(paymentMethod)) {
           throw ValidationError(
-            "Guest checkout requires instant payment (card, USSD, bank transfer, or wallet). Cash on delivery or pay-in-store is not allowed.",
+            "Guest checkout requires instant payment (card, USSD, bank transfer, or wallet). Cash on delivery or pay-in-store is not allowed."
           );
         }
       }
@@ -501,11 +491,26 @@ export class OrderService {
       }).session(session);
       if (existingTx) {
         await session.abortTransaction();
+        const gateway = resolveGateway(provider);
+        const initParams: ChargeParams = {
+          email: await resolveCustomerEmail(order.toObject() as IOrder),
+          amount: chargeAmount,
+          currency: "NGN",
+          reference: idempotencyKey,
+          paymentMethod,
+        };
+        if (callbackUrl) initParams.callbackUrl = callbackUrl;
+        const initResult = await gateway.initialize(initParams);
         return {
           order: order.toObject() as IOrder,
           transaction: existingTx,
+          authorizationUrl: initResult.authorizationUrl,
         };
       }
+
+      const customerEmail = await resolveCustomerEmail(
+        order.toObject() as IOrder
+      );
 
       const transactionData: Record<string, unknown> = {
         order: orderId,
@@ -519,41 +524,105 @@ export class OrderService {
       if (order.user) {
         transactionData.user = order.user;
       }
-      if (providerRef !== undefined) transactionData.providerRef = providerRef;
 
       const [transaction] = await Transaction.create([transactionData], {
         session,
       });
       if (!transaction) throw new Error("Failed to create transaction");
 
-      transaction.status = "PROCESSING";
-      await transaction.save({ session });
-
-      const gatewayPayload: Parameters<typeof chargeViaProvider>[0] = {
+      const gateway = resolveGateway(provider);
+      const chargeParams: ChargeParams = {
+        email: customerEmail,
         amount: chargeAmount,
         currency: "NGN",
+        reference: idempotencyKey,
         paymentMethod,
-        provider,
+        metadata: {
+          orderId,
+          transactionId: transaction._id.toString(),
+        },
       };
-      if (providerRef !== undefined) {
-        gatewayPayload.providerRef = providerRef;
-      }
-      const gatewayResult = await chargeViaProvider(gatewayPayload);
+      if (callbackUrl) chargeParams.callbackUrl = callbackUrl;
 
-      if (!gatewayResult.success) {
+      const initResult = await gateway.initialize(chargeParams);
+
+      transaction.status = "PROCESSING";
+      transaction.providerRef = initResult.providerRef;
+      await transaction.save({ session });
+
+      await session.commitTransaction();
+
+      return {
+        order: order.toObject() as IOrder,
+        transaction: transaction.toObject() as ITransaction,
+        authorizationUrl: initResult.authorizationUrl,
+      };
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
+  }
+
+  static async verifyPayment(
+    reference: string
+  ): Promise<{ order: IOrder; transaction: ITransaction }> {
+    const transaction = await Transaction.findOne({
+      idempotencyKey: reference,
+    });
+    if (!transaction) throw NotFoundError("Transaction");
+
+    if (transaction.status === "SUCCESS" || transaction.status === "FAILED") {
+      const order = await Order.findById(transaction.order).lean<IOrder>();
+      if (!order) throw NotFoundError("Order");
+      return { order, transaction };
+    }
+
+    const gateway = resolveGateway(transaction.provider);
+    const result = await gateway.verify(reference);
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const order = await Order.findById(transaction.order).session(session);
+      if (!order) throw NotFoundError("Order");
+
+      if (result.success) {
+        transaction.status = "SUCCESS";
+        transaction.paidAt = result.paidAt
+          ? new Date(result.paidAt)
+          : new Date();
+        if (result.metadata) transaction.metadata = result.metadata;
+        await transaction.save({ session });
+
+        for (const item of order.items) {
+          await InventoryService.commitReservation(
+            item.product.toString(),
+            item.quantity,
+            session
+          );
+        }
+
+        order.status = "CONFIRMED";
+        order.statusHistory.push({
+          status: "CONFIRMED",
+          timestamp: new Date(),
+          note: "Payment verified successfully",
+        });
+      } else {
         transaction.status = "FAILED";
         transaction.failureReason =
-          gatewayResult.failureReason ?? "Payment declined by provider.";
-        if (gatewayResult.metadata !== undefined) {
-          transaction.metadata = gatewayResult.metadata;
-        }
+          result.failureReason ?? "Payment declined by provider.";
+        if (result.metadata) transaction.metadata = result.metadata;
         await transaction.save({ session });
 
         for (const item of order.items) {
           await InventoryService.releaseReservation(
             item.product.toString(),
             item.quantity,
-            session,
+            session
           );
         }
 
@@ -562,31 +631,6 @@ export class OrderService {
           status: "FAILED",
           timestamp: new Date(),
           note: transaction.failureReason,
-        });
-      } else {
-        transaction.status = "SUCCESS";
-        transaction.paidAt = new Date();
-        if (!transaction.providerRef && gatewayResult.providerRef) {
-          transaction.providerRef = gatewayResult.providerRef;
-        }
-        if (gatewayResult.metadata !== undefined) {
-          transaction.metadata = gatewayResult.metadata;
-        }
-        await transaction.save({ session });
-
-        for (const item of order.items) {
-          await InventoryService.commitReservation(
-            item.product.toString(),
-            item.quantity,
-            session,
-          );
-        }
-
-        order.status = "CONFIRMED";
-        order.statusHistory.push({
-          status: "CONFIRMED",
-          timestamp: new Date(),
-          note: "Payment successful",
         });
       }
 
