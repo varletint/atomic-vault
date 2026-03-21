@@ -296,10 +296,35 @@ export class OrderService {
     return order;
   }
 
-  static async getUserOrders(userId: string): Promise<IOrder[]> {
-    return Order.find({ user: userId })
-      .sort({ createdAt: -1 })
-      .lean<IOrder[]>();
+  static async getUserOrders(
+    userId: string,
+    page = 1,
+    limit = 20
+  ): Promise<{
+    orders: IOrder[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const skip = (page - 1) * limit;
+
+    const [orders, total] = await Promise.all([
+      Order.find({ user: userId })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean<IOrder[]>(),
+      Order.countDocuments({ user: userId }),
+    ]);
+
+    return {
+      orders,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   /** Public order lookup for guest orders — email must match stored guestContact. */
