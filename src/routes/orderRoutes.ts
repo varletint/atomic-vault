@@ -4,6 +4,8 @@ import { authMiddleware } from "../middleware/authMiddleware.js";
 
 const router = Router();
 
+router.post("/webhook/paystack", OrderController.paystackWebhook);
+
 router.post("/guest", OrderController.createGuestOrder);
 router.get("/guest/:orderId", OrderController.getGuestOrder);
 
@@ -19,5 +21,9 @@ router.patch("/:orderId/deliver", OrderController.deliverOrder);
 router.patch("/:orderId/cancel", OrderController.cancelOrder);
 router.patch("/:orderId/fail", OrderController.failOrder);
 router.post("/:orderId/payment", OrderController.processPayment);
+router.get(
+  "/:orderId/payment/verify/:reference",
+  OrderController.verifyPayment
+);
 
 export default router;

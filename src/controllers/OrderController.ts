@@ -3,54 +3,55 @@ import { asyncHandler } from "../middleware/asyncHandler.js";
 import { OrderService } from "../services/OrderService.js";
 import { ValidationError } from "../utils/AppError.js";
 import type { PaymentMethod } from "../models/index.js";
+import { PaystackService } from "../services/PaystackService.js";
 
 export class OrderController {
-  /**
-   * POST /api/orders/guest
-   * Guest checkout (no account). Body: idempotencyKey, shippingAddress, guestContact { email, phone }, items [{ productId, quantity }], deliveryFee? (kobo)
-   */
-  static createGuestOrder = asyncHandler(async (req: Request, res: Response) => {
-    const {
-      idempotencyKey,
-      shippingAddress,
-      guestContact,
-      items,
-      deliveryFee,
-    } = req.body as {
-      idempotencyKey: string;
-      shippingAddress: {
-        street: string;
-        city: string;
-        state: string;
-        zip: string;
-        country: string;
+  static createGuestOrder = asyncHandler(
+    async (req: Request, res: Response) => {
+      const {
+        idempotencyKey,
+        shippingAddress,
+        guestContact,
+        items,
+        deliveryFee,
+      } = req.body as {
+        idempotencyKey: string;
+        shippingAddress: {
+          street: string;
+          city: string;
+          state: string;
+          zip: string;
+          country: string;
+        };
+        guestContact: { email: string; phone: string };
+        items: { productId: string; quantity: number }[];
+        deliveryFee?: number;
       };
-      guestContact: { email: string; phone: string };
-      items: { productId: string; quantity: number }[];
-      deliveryFee?: number;
-    };
 
-    if (!idempotencyKey || !shippingAddress || !guestContact || !items) {
-      throw ValidationError(
-        "idempotencyKey, shippingAddress, guestContact, and items are required.",
-      );
+      if (!idempotencyKey || !shippingAddress || !guestContact || !items) {
+        throw ValidationError(
+          "idempotencyKey, shippingAddress, guestContact, and items are required."
+        );
+      }
+
+      const guestParams: Parameters<typeof OrderService.createGuestOrder>[0] = {
+        idempotencyKey,
+        shippingAddress,
+        guestContact,
+        items,
+      };
+      if (deliveryFee !== undefined) guestParams.deliveryFee = deliveryFee;
+
+      const order = await OrderService.createGuestOrder(guestParams);
+
+      res.status(201).json({
+        success: true,
+        message:
+          "Guest order created. Pay with an instant method (card, USSD, transfer, or wallet).",
+        data: order,
+      });
     }
-
-    const order = await OrderService.createGuestOrder({
-      idempotencyKey,
-      shippingAddress,
-      guestContact,
-      items,
-      deliveryFee,
-    });
-
-    res.status(201).json({
-      success: true,
-      message:
-        "Guest order created. Pay with an instant method (card, USSD, transfer, or wallet).",
-      data: order,
-    });
-  });
+  );
 
   static getGuestOrder = asyncHandler(async (req: Request, res: Response) => {
     const { orderId } = req.params as { orderId: string };
@@ -80,14 +81,14 @@ export class OrderController {
 
     if (!idempotencyKey || !shippingAddress) {
       throw ValidationError(
-        "Idempotency key and shipping address are required.",
+        "Idempotency key and shipping address are required."
       );
     }
 
     const order = await OrderService.createOrder(
       userId,
       idempotencyKey,
-      shippingAddress,
+      shippingAddress
     );
     res
       .status(201)
@@ -160,17 +161,17 @@ export class OrderController {
 
   static processPayment = asyncHandler(async (req: Request, res: Response) => {
     const { orderId } = req.params as { orderId: string };
-    const { paymentMethod, provider, idempotencyKey, providerRef } =
+    const { paymentMethod, provider, idempotencyKey, callbackUrl } =
       req.body as {
         paymentMethod: PaymentMethod;
         provider: string;
         idempotencyKey: string;
-        providerRef?: string;
+        callbackUrl?: string;
       };
 
     if (!paymentMethod || !provider || !idempotencyKey) {
       throw ValidationError(
-        "Payment method, provider, and idempotency key are required.",
+        "Payment method, provider, and idempotency key are required."
       );
     }
 
@@ -179,13 +180,65 @@ export class OrderController {
       paymentMethod,
       provider,
       idempotencyKey,
-      providerRef,
+      callbackUrl
     );
 
     res.status(200).json({
       success: true,
-      message: "Payment processed successfully.",
+      message:
+        "Payment initialized. Redirect the customer to complete payment.",
+      data: {
+        authorizationUrl: result.authorizationUrl,
+        order: result.order,
+        transaction: result.transaction,
+      },
+    });
+  });
+
+  static verifyPayment = asyncHandler(async (req: Request, res: Response) => {
+    const { reference } = req.params as { reference: string };
+
+    if (!reference) {
+      throw ValidationError("Payment reference is required.");
+    }
+
+    const result = await OrderService.verifyPayment(reference);
+
+    res.status(200).json({
+      success: true,
+      message:
+        result.transaction.status === "SUCCESS"
+          ? "Payment verified successfully."
+          : "Payment verification complete.",
       data: result,
     });
+  });
+
+  static paystackWebhook = asyncHandler(async (req: Request, res: Response) => {
+    const signature = req.headers["x-paystack-signature"] as string;
+
+    if (!signature) {
+      res.status(400).json({ success: false, message: "Missing signature." });
+      return;
+    }
+
+    const rawBody = JSON.stringify(req.body);
+    const isValid = PaystackService.validateWebhookSignature(
+      rawBody,
+      signature
+    );
+
+    if (!isValid) {
+      res.status(401).json({ success: false, message: "Invalid signature." });
+      return;
+    }
+
+    const event = req.body as { event: string; data: { reference: string } };
+
+    if (event.event === "charge.success") {
+      await OrderService.verifyPayment(event.data.reference);
+    }
+
+    res.status(200).json({ success: true });
   });
 }
