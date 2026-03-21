@@ -182,8 +182,9 @@ export class UserService {
       await session.commitTransaction();
 
       // Strip password before returning
-      const safeUser = user!.toObject();
-      delete (safeUser as any).password;
+      const { password: removedPassword, ...safeUser } = user!.toObject() as
+        IUser & { password?: string };
+      void removedPassword;
 
       const tokens = issueTokens(safeUser as IUser);
 
