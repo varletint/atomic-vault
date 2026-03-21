@@ -105,8 +105,14 @@ export class OrderController {
     const userId = req.user?.userId;
     if (!userId) throw ValidationError("User not authenticated.");
 
-    const orders = await OrderService.getUserOrders(userId);
-    res.status(200).json({ success: true, data: orders });
+    const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
+    const limit = Math.min(
+      100,
+      Math.max(1, parseInt(req.query.limit as string, 10) || 20)
+    );
+
+    const result = await OrderService.getUserOrders(userId, page, limit);
+    res.status(200).json({ success: true, data: result });
   });
 
   static confirmOrder = asyncHandler(async (req: Request, res: Response) => {
