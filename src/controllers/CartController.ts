@@ -2,6 +2,8 @@ import type { Request, Response } from "express";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { CartService } from "../services/CartService.js";
 import { ValidationError } from "../utils/AppError.js";
+import type { z } from "zod";
+import type { addItemSchema, updateQuantitySchema } from "../schemas/cartSchemas.js";
 
 export class CartController {
   static getCart = asyncHandler(async (req: Request, res: Response) => {
@@ -16,14 +18,7 @@ export class CartController {
     const userId = req.user?.userId;
     if (!userId) throw ValidationError("User not authenticated.");
 
-    const { productId, quantity } = req.body as {
-      productId: string;
-      quantity: number;
-    };
-
-    if (!productId || !quantity) {
-      throw ValidationError("Product ID and quantity are required.");
-    }
+    const { productId, quantity } = req.body as z.infer<typeof addItemSchema>;
 
     const cart = await CartService.addItem(userId, productId, quantity);
     res
@@ -37,11 +32,7 @@ export class CartController {
       if (!userId) throw ValidationError("User not authenticated.");
 
       const { productId } = req.params as { productId: string };
-      const { quantity } = req.body as { quantity: number };
-
-      if (quantity === undefined) {
-        throw ValidationError("Quantity is required.");
-      }
+      const { quantity } = req.body as z.infer<typeof updateQuantitySchema>;
 
       const cart = await CartService.updateItemQuantity(
         userId,

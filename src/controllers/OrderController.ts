@@ -2,45 +2,29 @@ import type { Request, Response } from "express";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { OrderService } from "../services/OrderService.js";
 import { ValidationError } from "../utils/AppError.js";
-import type { PaymentMethod } from "../models/index.js";
 import { PaystackService } from "../services/PaystackService.js";
+import type { z } from "zod";
+import type {
+  createOrderSchema,
+  createGuestOrderSchema,
+  processPaymentSchema,
+  reasonSchema,
+  noteSchema,
+} from "../schemas/orderSchemas.js";
 
 export class OrderController {
   static createGuestOrder = asyncHandler(
     async (req: Request, res: Response) => {
-      const {
-        idempotencyKey,
-        shippingAddress,
-        guestContact,
-        items,
-        deliveryFee,
-      } = req.body as {
-        idempotencyKey: string;
-        shippingAddress: {
-          street: string;
-          city: string;
-          state: string;
-          zip: string;
-          country: string;
-        };
-        guestContact: { email: string; phone: string };
-        items: { productId: string; quantity: number }[];
-        deliveryFee?: number;
-      };
-
-      if (!idempotencyKey || !shippingAddress || !guestContact || !items) {
-        throw ValidationError(
-          "idempotencyKey, shippingAddress, guestContact, and items are required."
-        );
-      }
+      const body = req.body as z.infer<typeof createGuestOrderSchema>;
 
       const guestParams: Parameters<typeof OrderService.createGuestOrder>[0] = {
-        idempotencyKey,
-        shippingAddress,
-        guestContact,
-        items,
+        idempotencyKey: body.idempotencyKey,
+        shippingAddress: body.shippingAddress,
+        guestContact: body.guestContact,
+        items: body.items,
       };
-      if (deliveryFee !== undefined) guestParams.deliveryFee = deliveryFee;
+      if (body.deliveryFee !== undefined)
+        guestParams.deliveryFee = body.deliveryFee;
 
       const order = await OrderService.createGuestOrder(guestParams);
 
@@ -50,7 +34,7 @@ export class OrderController {
           "Guest order created. Pay with an instant method (card, USSD, transfer, or wallet).",
         data: order,
       });
-    }
+    },
   );
 
   static getGuestOrder = asyncHandler(async (req: Request, res: Response) => {
@@ -68,27 +52,14 @@ export class OrderController {
     const userId = req.user?.userId;
     if (!userId) throw ValidationError("User not authenticated.");
 
-    const { idempotencyKey, shippingAddress } = req.body as {
-      idempotencyKey: string;
-      shippingAddress: {
-        street: string;
-        city: string;
-        state: string;
-        zip: string;
-        country: string;
-      };
-    };
-
-    if (!idempotencyKey || !shippingAddress) {
-      throw ValidationError(
-        "Idempotency key and shipping address are required."
-      );
-    }
+    const { idempotencyKey, shippingAddress } = req.body as z.infer<
+      typeof createOrderSchema
+    >;
 
     const order = await OrderService.createOrder(
       userId,
       idempotencyKey,
-      shippingAddress
+      shippingAddress,
     );
     res
       .status(201)
@@ -108,7 +79,7 @@ export class OrderController {
     const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
     const limit = Math.min(
       100,
-      Math.max(1, parseInt(req.query.limit as string, 10) || 20)
+      Math.max(1, parseInt(req.query.limit as string, 10) || 20),
     );
 
     const result = await OrderService.getUserOrders(userId, page, limit);
@@ -125,7 +96,7 @@ export class OrderController {
 
   static shipOrder = asyncHandler(async (req: Request, res: Response) => {
     const { orderId } = req.params as { orderId: string };
-    const { note } = req.body as { note?: string };
+    const { note } = req.body as z.infer<typeof noteSchema>;
 
     const order = await OrderService.shipOrder(orderId, note);
     res
@@ -143,9 +114,7 @@ export class OrderController {
 
   static cancelOrder = asyncHandler(async (req: Request, res: Response) => {
     const { orderId } = req.params as { orderId: string };
-    const { reason } = req.body as { reason: string };
-
-    if (!reason) throw ValidationError("Cancellation reason is required.");
+    const { reason } = req.body as z.infer<typeof reasonSchema>;
 
     const order = await OrderService.cancelOrder(orderId, reason);
     res
@@ -155,9 +124,7 @@ export class OrderController {
 
   static failOrder = asyncHandler(async (req: Request, res: Response) => {
     const { orderId } = req.params as { orderId: string };
-    const { reason } = req.body as { reason: string };
-
-    if (!reason) throw ValidationError("Failure reason is required.");
+    const { reason } = req.body as z.infer<typeof reasonSchema>;
 
     const order = await OrderService.failOrder(orderId, reason);
     res
@@ -167,26 +134,14 @@ export class OrderController {
 
   static processPayment = asyncHandler(async (req: Request, res: Response) => {
     const { orderId } = req.params as { orderId: string };
-    const { paymentMethod, provider, idempotencyKey, callbackUrl } =
-      req.body as {
-        paymentMethod: PaymentMethod;
-        provider: string;
-        idempotencyKey: string;
-        callbackUrl?: string;
-      };
-
-    if (!paymentMethod || !provider || !idempotencyKey) {
-      throw ValidationError(
-        "Payment method, provider, and idempotency key are required."
-      );
-    }
+    const body = req.body as z.infer<typeof processPaymentSchema>;
 
     const result = await OrderService.processPayment(
       orderId,
-      paymentMethod,
-      provider,
-      idempotencyKey,
-      callbackUrl
+      body.paymentMethod,
+      body.provider,
+      body.idempotencyKey,
+      body.callbackUrl,
     );
 
     res.status(200).json({
@@ -231,7 +186,7 @@ export class OrderController {
     const rawBody = JSON.stringify(req.body);
     const isValid = PaystackService.validateWebhookSignature(
       rawBody,
-      signature
+      signature,
     );
 
     if (!isValid) {

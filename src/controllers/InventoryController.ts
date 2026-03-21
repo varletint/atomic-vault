@@ -1,7 +1,8 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { InventoryService } from "../services/InventoryService.js";
-import { ValidationError } from "../utils/AppError.js";
+import type { z } from "zod";
+import type { adjustStockSchema, stockQuantitySchema } from "../schemas/inventorySchemas.js";
 
 export class InventoryController {
   static getByProductId = asyncHandler(async (req: Request, res: Response) => {
@@ -12,11 +13,7 @@ export class InventoryController {
 
   static adjustStock = asyncHandler(async (req: Request, res: Response) => {
     const { productId } = req.params as { productId: string };
-    const { quantity } = req.body as { quantity: number };
-
-    if (quantity === undefined || quantity === 0) {
-      throw ValidationError("Quantity is required and cannot be zero.");
-    }
+    const { quantity } = req.body as z.infer<typeof adjustStockSchema>;
 
     const inventory = await InventoryService.adjustStock(productId, quantity);
     res
@@ -26,9 +23,7 @@ export class InventoryController {
 
   static reserveStock = asyncHandler(async (req: Request, res: Response) => {
     const { productId } = req.params as { productId: string };
-    const { quantity } = req.body as { quantity: number };
-
-    if (!quantity) throw ValidationError("Quantity is required.");
+    const { quantity } = req.body as z.infer<typeof stockQuantitySchema>;
 
     const inventory = await InventoryService.reserveStock(productId, quantity);
     res
@@ -39,42 +34,34 @@ export class InventoryController {
   static releaseReservation = asyncHandler(
     async (req: Request, res: Response) => {
       const { productId } = req.params as { productId: string };
-      const { quantity } = req.body as { quantity: number };
-
-      if (!quantity) throw ValidationError("Quantity is required.");
+      const { quantity } = req.body as z.infer<typeof stockQuantitySchema>;
 
       const inventory = await InventoryService.releaseReservation(
         productId,
         quantity,
       );
-      res
-        .status(200)
-        .json({
-          success: true,
-          message: "Reservation released.",
-          data: inventory,
-        });
+      res.status(200).json({
+        success: true,
+        message: "Reservation released.",
+        data: inventory,
+      });
     },
   );
 
   static commitReservation = asyncHandler(
     async (req: Request, res: Response) => {
       const { productId } = req.params as { productId: string };
-      const { quantity } = req.body as { quantity: number };
-
-      if (!quantity) throw ValidationError("Quantity is required.");
+      const { quantity } = req.body as z.infer<typeof stockQuantitySchema>;
 
       const inventory = await InventoryService.commitReservation(
         productId,
         quantity,
       );
-      res
-        .status(200)
-        .json({
-          success: true,
-          message: "Reservation committed.",
-          data: inventory,
-        });
+      res.status(200).json({
+        success: true,
+        message: "Reservation committed.",
+        data: inventory,
+      });
     },
   );
 }
