@@ -4,7 +4,7 @@ A robust, high-integrity backend service architected for transactional reliabili
 
 ## Features
 
-- **User Management**: Registration, authentication, FSM-based account lifecycle
+- **User Management**: Registration, authentication, password reset (OTP via email), FSM-based account lifecycle
 - **Product Catalog**: Product CRUD with inventory tracking
 - **Inventory Management**: FSM-based stock reservation system (AVAILABLE → RESERVED → COMMITTED)
 - **Shopping Cart**: Real-time inventory validation
@@ -65,12 +65,31 @@ npm start
 
 ### Environment Variables
 
+See `.env.example` for all available configuration options. Key variables:
+
 ```env
+# Database
 MONGODB_URI=mongodb+srv://...
+
+# JWT
 JWT_ACCESS_SECRET=your-secret
 JWT_REFRESH_SECRET=your-secret
 JWT_ACCESS_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=7d
+
+# Password Reset (OTP via email)
+PASSWORD_RESET_OTP_TTL_MINUTES=15
+PASSWORD_RESET_MAX_OTP_ATTEMPTS=5
+PASSWORD_RESET_EMAIL_MAX_PER_HOUR=3
+
+# SMTP (optional in dev - OTP logged if unset)
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=your-email@example.com
+SMTP_PASS=your-password
+SMTP_FROM="Order System" <noreply@example.com>
+
+# Server
 FRONTEND_URL=http://localhost:5173
 NODE_ENV=development
 ```
@@ -82,12 +101,15 @@ NODE_ENV=development
 - `POST /register` - Create account
 - `POST /login` - Authenticate
 - `POST /refresh` - Refresh access token
-- `GET /profile` - Get user profile
-- `PATCH /profile` - Update profile
-- `PATCH /verify` - Verify email
-- `PATCH /suspend` - Suspend account
-- `PATCH /reactivate` - Reactivate account
-- `PATCH /deactivate` - Deactivate account
+- `POST /forgot-password` - Request password reset OTP
+- `POST /reset-password` - Reset password with OTP
+- `GET /me` - Get current user profile (auth)
+- `GET /:userId` - Get user by ID (auth)
+- `PATCH /:userId/profile` - Update profile (auth)
+- `PATCH /:userId/verify-email` - Verify email (admin)
+- `PATCH /:userId/suspend` - Suspend account (admin)
+- `PATCH /:userId/reactivate` - Reactivate account (admin)
+- `PATCH /:userId/deactivate` - Deactivate account (admin)
 
 ### Products (`/api/products`)
 
@@ -151,6 +173,8 @@ vercel --prod
 
 Add these in Vercel Dashboard → Settings → Environment Variables:
 
+Required:
+
 - `MONGODB_URI`
 - `JWT_ACCESS_SECRET`
 - `JWT_REFRESH_SECRET`
@@ -158,6 +182,22 @@ Add these in Vercel Dashboard → Settings → Environment Variables:
 - `JWT_REFRESH_EXPIRES_IN`
 - `FRONTEND_URL`
 - `NODE_ENV=production`
+
+SMTP (required in production for password reset):
+
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USER`
+- `SMTP_PASS`
+- `SMTP_FROM`
+
+Optional (with defaults):
+
+- `PASSWORD_RESET_OTP_TTL_MINUTES` (default: 15)
+- `PASSWORD_RESET_MAX_OTP_ATTEMPTS` (default: 5)
+- `PASSWORD_RESET_EMAIL_MAX_PER_HOUR` (default: 3)
+
+**Note**: In production, `SMTP_HOST` must be configured or password reset requests will fail. In development, OTPs are logged to console if SMTP is not configured.
 
 ## FSM State Diagrams
 
