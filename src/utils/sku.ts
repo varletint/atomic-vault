@@ -47,7 +47,7 @@ export async function generateSku(category: string): Promise<string> {
 }
 
 export function parseSku(
-  sku: string
+  sku: string,
 ): { prefix: string; segment: string } | null {
   const parts = sku.split("-");
   if (parts.length !== 2) return null;
