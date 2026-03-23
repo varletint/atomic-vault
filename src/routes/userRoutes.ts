@@ -9,6 +9,8 @@ import { validate } from "../middleware/validate.js";
 import {
   registerSchema,
   loginSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
   reasonSchema,
   updateProfileSchema,
 } from "../schemas/userSchemas.js";
@@ -19,6 +21,17 @@ router.post("/register", validate(registerSchema), UserController.register);
 router.post("/login", validate(loginSchema), UserController.login);
 router.post("/refresh", UserController.refreshTokens);
 router.post("/logout", UserController.logout);
+
+router.post(
+  "/forgot-password",
+  validate(forgotPasswordSchema),
+  UserController.requestPasswordReset
+);
+router.post(
+  "/reset-password",
+  validate(resetPasswordSchema),
+  UserController.resetPassword
+);
 
 router.patch(
   "/:userId/verify-email",

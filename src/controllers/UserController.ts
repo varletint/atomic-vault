@@ -7,6 +7,8 @@ import type { z } from "zod";
 import type {
   registerSchema,
   loginSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
   reasonSchema,
   updateProfileSchema,
 } from "../schemas/userSchemas.js";
@@ -99,6 +101,34 @@ export class UserController {
     res.status(200).json({
       success: true,
       message: "Logged out successfully.",
+    });
+  });
+
+  static requestPasswordReset = asyncHandler(
+    async (req: Request, res: Response) => {
+      const { email } = req.body as z.infer<typeof forgotPasswordSchema>;
+
+      await UserService.requestPasswordResetOtp(email);
+
+      res.status(200).json({
+        success: true,
+        message:
+          "If an account exists for that email, a reset code has been sent.",
+      });
+    }
+  );
+
+  static resetPassword = asyncHandler(async (req: Request, res: Response) => {
+    const { email, otp, password } = req.body as z.infer<
+      typeof resetPasswordSchema
+    >;
+
+    await UserService.resetPasswordWithOtp(email, otp, password);
+
+    res.status(200).json({
+      success: true,
+      message:
+        "Password has been reset. You can sign in with your new password.",
     });
   });
 

@@ -20,6 +20,19 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
+export const forgotPasswordSchema = z.object({
+  email: z.string().email("Invalid email address"),
+});
+
+export const resetPasswordSchema = z.object({
+  email: z.string().email("Invalid email address"),
+  otp: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, "Code must be a 6-digit number"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+});
+
 export const reasonSchema = z.object({
   reason: z.string().min(1, "Reason is required"),
 });
