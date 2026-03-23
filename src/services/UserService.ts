@@ -1,6 +1,13 @@
+import { randomInt } from "node:crypto";
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
-import { User, type IUser, type UserStatus } from "../models/index.js";
+import {
+  User,
+  PasswordResetOtp,
+  type IUser,
+  type UserStatus,
+} from "../models/index.js";
+import { sendPasswordResetOtpEmail } from "./EmailService.js";
 import {
   generateAccessToken,
   generateRefreshToken,
@@ -104,6 +111,24 @@ const LOCKOUT_MINUTES = Math.max(
 
 const LOCKOUT_MS = LOCKOUT_MINUTES * 60 * 1000;
 
+/** OTP validity window (minutes). Env: PASSWORD_RESET_OTP_TTL_MINUTES, default 15, min 5 */
+const PASSWORD_RESET_OTP_TTL_MINUTES = Math.max(
+  5,
+  parseInt(process.env.PASSWORD_RESET_OTP_TTL_MINUTES ?? "15", 10) || 15
+);
+
+/** Max wrong OTP attempts per challenge before requiring a new code */
+const PASSWORD_RESET_MAX_OTP_ATTEMPTS = Math.max(
+  3,
+  parseInt(process.env.PASSWORD_RESET_MAX_OTP_ATTEMPTS ?? "5", 10) || 5
+);
+
+/** Max reset emails per user per rolling hour (abuse throttle) */
+const PASSWORD_RESET_EMAIL_MAX_PER_HOUR = Math.max(
+  1,
+  parseInt(process.env.PASSWORD_RESET_EMAIL_MAX_PER_HOUR ?? "3", 10) || 3
+);
+
 function bumpTokenVersion(user: IUser): void {
   if (!user.auth) {
     user.auth = {
@@ -182,8 +207,8 @@ export class UserService {
       await session.commitTransaction();
 
       // Strip password before returning
-      const { password: removedPassword, ...safeUser } = user!.toObject() as
-        IUser & { password?: string };
+      const { password: removedPassword, ...safeUser } =
+        user!.toObject() as IUser & { password?: string };
       void removedPassword;
 
       const tokens = issueTokens(safeUser as IUser);
@@ -291,6 +316,157 @@ export class UserService {
     const tokens = issueTokens(safeUser as IUser);
 
     return { user: safeUser as IUser, tokens };
+  }
+
+  /**
+   * Creates a short-lived OTP challenge and emails the code.
+   * Always completes without error (no email enumeration); skips send for
+   * unknown emails, DEACTIVATED accounts, or when hourly rate limit is hit.
+   */
+  static async requestPasswordResetOtp(email: string): Promise<void> {
+    const normalizedEmail = email.toLowerCase().trim();
+
+    const user = await User.findOne({ email: normalizedEmail }).select(
+      "_id status"
+    );
+
+    if (!user || user.status === "DEACTIVATED") {
+      return;
+    }
+
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const recentCount = await PasswordResetOtp.countDocuments({
+      userId: user._id,
+      createdAt: { $gte: hourAgo },
+    });
+    if (recentCount >= PASSWORD_RESET_EMAIL_MAX_PER_HOUR) {
+      return;
+    }
+
+    await PasswordResetOtp.deleteMany({
+      userId: user._id,
+      usedAt: null,
+    });
+
+    const otp = randomInt(0, 1_000_000).toString().padStart(6, "0");
+    const salt = await bcrypt.genSalt(10);
+    const codeHash = await bcrypt.hash(otp, salt);
+    const expiresAt = new Date(
+      Date.now() + PASSWORD_RESET_OTP_TTL_MINUTES * 60 * 1000
+    );
+
+    await PasswordResetOtp.create({
+      userId: user._id,
+      email: normalizedEmail,
+      codeHash,
+      expiresAt,
+    });
+
+    await sendPasswordResetOtpEmail(normalizedEmail, otp);
+  }
+
+  /**
+   * Verifies the latest unused OTP and sets a new password.
+   * Bumps `auth.tokenVersion` so existing JWTs are invalidated.
+   */
+  static async resetPasswordWithOtp(
+    email: string,
+    otp: string,
+    newPassword: string
+  ): Promise<void> {
+    const normalizedEmail = email.toLowerCase().trim();
+    const normalizedOtp = otp.trim();
+
+    if (!/^\d{6}$/.test(normalizedOtp)) {
+      throw ValidationError("Invalid reset code.");
+    }
+
+    const user = await User.findOne({ email: normalizedEmail }).select(
+      "+password"
+    );
+
+    if (!user || user.status === "DEACTIVATED") {
+      throw ValidationError("Invalid or expired reset code.");
+    }
+
+    const challenge = await PasswordResetOtp.findOne({
+      userId: user._id,
+      usedAt: null,
+      expiresAt: { $gt: new Date() },
+    }).sort({ createdAt: -1 });
+
+    if (!challenge) {
+      throw ValidationError("Invalid or expired reset code.");
+    }
+
+    if (challenge.attempts >= PASSWORD_RESET_MAX_OTP_ATTEMPTS) {
+      throw ValidationError("Too many attempts. Request a new code.");
+    }
+
+    const match = await bcrypt.compare(normalizedOtp, challenge.codeHash);
+    if (!match) {
+      challenge.attempts += 1;
+      await challenge.save();
+      throw ValidationError("Invalid or expired reset code.");
+    }
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const lockedChallenge = await PasswordResetOtp.findById(
+        challenge._id
+      ).session(session);
+
+      if (
+        !lockedChallenge ||
+        lockedChallenge.usedAt != null ||
+        lockedChallenge.expiresAt <= new Date()
+      ) {
+        throw ValidationError("Invalid or expired reset code.");
+      }
+
+      const u = await User.findById(user._id)
+        .session(session)
+        .select("+password");
+
+      if (!u || u.status === "DEACTIVATED") {
+        throw ValidationError("Invalid or expired reset code.");
+      }
+
+      const pwSalt = await bcrypt.genSalt(12);
+      u.password = await bcrypt.hash(newPassword, pwSalt);
+
+      if (!u.auth) {
+        u.auth = {
+          failedLoginAttempts: 0,
+          tokenVersion: 0,
+          mfa: {
+            enabled: false,
+            method: "NONE",
+            backupCodesHash: [],
+          },
+        };
+      }
+      u.auth.failedLoginAttempts = 0;
+      if (u.auth.lockedUntil) {
+        delete u.auth.lockedUntil;
+      }
+      u.auth.passwordChangedAt = new Date();
+      bumpTokenVersion(u);
+
+      await u.save({ session });
+
+      lockedChallenge.usedAt = new Date();
+      await lockedChallenge.save({ session });
+
+      await session.commitTransaction();
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
   }
 
   /**
