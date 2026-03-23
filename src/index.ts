@@ -1,9 +1,11 @@
+import "dotenv/config";
 import express, { type Request, type Response } from "express";
 import mongoose from "mongoose";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import { corsOptions, devCorsOptions } from "./config/cors.js";
 import { errorHandler } from "./middleware/errorHandler.js";
+
 import {
   userRoutes,
   productRoutes,
@@ -13,6 +15,7 @@ import {
 } from "./routes/index.js";
 
 const app = express();
+
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI =
   process.env.MONGODB_URI || "mongodb://localhost:27017/order-system";
@@ -92,7 +95,11 @@ if (process.env.NODE_ENV !== "production") {
         console.log(` Server running on port ${PORT}`);
         console.log(` Environment: ${process.env.NODE_ENV || "development"}`);
         console.log(
-          `🌐 CORS: ${isDevelopment ? "Development (all origins)" : "Production (restricted)"}`,
+          ` CORS: ${
+            isDevelopment
+              ? "Development (all origins)"
+              : "Production (restricted)"
+          }`
         );
       });
     })
