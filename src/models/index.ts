@@ -9,6 +9,10 @@ export {
   type UserStatus,
   type IUserStatusHistoryEntry,
 } from "./User.js";
+export {
+  PasswordResetOtp,
+  type IPasswordResetOtp,
+} from "./PasswordResetOtp.js";
 export { Product, type IProduct } from "./Product.js";
 export { Inventory, type IInventory } from "./Inventory.js";
 export { Cart, type ICart, type ICartItem } from "./Cart.js";

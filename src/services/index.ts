@@ -4,6 +4,7 @@
  */
 
 export { UserService } from "./UserService.js";
+export { sendPasswordResetOtpEmail } from "./EmailService.js";
 export { ProductService } from "./ProductService.js";
 export { InventoryService } from "./InventoryService.js";
 export { CartService } from "./CartService.js";
