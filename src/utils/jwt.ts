@@ -15,9 +15,12 @@ const ACCESS_SECRET =
   process.env.JWT_ACCESS_SECRET || "fallback_access_secret_do_not_use";
 const REFRESH_SECRET =
   process.env.JWT_REFRESH_SECRET || "fallback_refresh_secret_do_not_use";
+const EMAIL_VERIFY_SECRET =
+  process.env.EMAIL_VERIFY_SECRET || "fallback_email_verify_secret_do_not_use";
 
 const ACCESS_EXPIRES_IN = process.env.JWT_ACCESS_EXPIRES_IN || "15m";
 const REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || "7d";
+const EMAIL_VERIFY_EXPIRES_IN = process.env.EMAIL_VERIFY_EXPIRES_IN || "24h";
 
 // ─────────────────────────────────────────────────
 // Types
@@ -107,3 +110,30 @@ export const getExpirationConfig = () => ({
   accessExpiresIn: ACCESS_EXPIRES_IN,
   refreshExpiresIn: REFRESH_EXPIRES_IN,
 });
+
+// ─────────────────────────────────────────────────
+// Email Verification Tokens
+// ─────────────────────────────────────────────────
+
+export interface EmailVerifyPayload {
+  userId: string;
+}
+
+/**
+ * Generates a short-lived token used in email verification links.
+ */
+export const generateEmailVerificationToken = (userId: string): string => {
+  return jwt.sign({ userId } as EmailVerifyPayload, EMAIL_VERIFY_SECRET, {
+    expiresIn: EMAIL_VERIFY_EXPIRES_IN,
+  } as jwt.SignOptions);
+};
+
+/**
+ * Verifies and decodes an email verification token.
+ * Throws if the token is expired, tampered, or invalid.
+ */
+export const verifyEmailVerificationToken = (
+  token: string
+): EmailVerifyPayload => {
+  return jwt.verify(token, EMAIL_VERIFY_SECRET) as EmailVerifyPayload;
+};
