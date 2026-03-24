@@ -2,7 +2,10 @@ import type { Request, Response } from "express";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { UserService } from "../services/UserService.js";
 import { ValidationError } from "../utils/AppError.js";
-import { parseExpirationToMs } from "../utils/jwt.js";
+import {
+  parseExpirationToMs,
+  verifyEmailVerificationToken,
+} from "../utils/jwt.js";
 import type { z } from "zod";
 import type {
   registerSchema,
@@ -16,12 +19,12 @@ import type {
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
-  sameSite: "strict" as const,
+  sameSite: "none" as const,
 };
 
 function setAuthCookies(
   res: Response,
-  tokens: { accessToken: string; refreshToken: string },
+  tokens: { accessToken: string; refreshToken: string }
 ): void {
   res.cookie("accessToken", tokens.accessToken, {
     ...COOKIE_OPTIONS,
@@ -145,6 +148,47 @@ export class UserController {
       data: user,
     });
   });
+
+  static verifyEmailByToken = asyncHandler(
+    async (req: Request, res: Response) => {
+      const token = req.query.token as string | undefined;
+
+      if (!token) {
+        throw ValidationError("Verification token is missing.");
+      }
+
+      let userId: string;
+      try {
+        const decoded = verifyEmailVerificationToken(token);
+        userId = decoded.userId;
+      } catch {
+        throw ValidationError("Invalid or expired verification link.");
+      }
+
+      const { user, tokens } = await UserService.verifyEmail(userId);
+
+      setAuthCookies(res, tokens);
+
+      res.status(200).json({
+        success: true,
+        message: "Email verified. Account is now active.",
+        data: user,
+      });
+    }
+  );
+
+  static resendVerificationEmail = asyncHandler(
+    async (req: Request, res: Response) => {
+      const userId = req.user!.userId;
+
+      await UserService.resendVerificationEmail(userId);
+
+      res.status(200).json({
+        success: true,
+        message: "Verification email sent. Please check your inbox.",
+      });
+    }
+  );
 
   static suspendUser = asyncHandler(async (req: Request, res: Response) => {
     const { userId } = req.params as { userId: string };

@@ -33,6 +33,16 @@ router.post(
   UserController.resetPassword
 );
 
+// Public: verify email via signed token link
+router.get("/verify-email", UserController.verifyEmailByToken);
+
+// Authenticated: request a new verification email
+router.post(
+  "/resend-verification",
+  authMiddleware,
+  UserController.resendVerificationEmail
+);
+
 router.patch(
   "/:userId/verify-email",
   authMiddleware,
