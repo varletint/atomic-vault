@@ -8,3 +8,4 @@ export { default as productRoutes } from "./productRoutes.js";
 export { default as inventoryRoutes } from "./inventoryRoutes.js";
 export { default as cartRoutes } from "./cartRoutes.js";
 export { default as orderRoutes } from "./orderRoutes.js";
+export { default as seoRoutes } from "./seoRoutes.js";
