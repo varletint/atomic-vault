@@ -12,6 +12,7 @@ import {
   inventoryRoutes,
   cartRoutes,
   orderRoutes,
+  seoRoutes,
 } from "./routes/index.js";
 
 const app = express();
@@ -56,6 +57,9 @@ app.use("/api/products", productRoutes);
 app.use("/api/inventory", inventoryRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/orders", orderRoutes);
+
+// Mount SEO routes at the root level
+app.use("/", seoRoutes);
 
 app.use((_req: Request, res: Response) => {
   res.status(404).json({
