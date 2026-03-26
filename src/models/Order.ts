@@ -42,6 +42,8 @@ export interface IGuestContact {
 
 export interface IOrderItem {
   product: Types.ObjectId;
+  variant?: Types.ObjectId; // references a variant sub-doc _id
+  variantLabel?: string; // snapshot: "Blue / L"
   productName: string; // snapshot — product name could change later
   quantity: number;
   pricePerUnit: number; // in kobo, snapshot at time of order
@@ -84,6 +86,11 @@ const orderItemSchema = new Schema<IOrderItem>(
       ref: "Product",
       required: true,
     },
+    variant: {
+      type: Schema.Types.ObjectId,
+      default: null,
+    },
+    variantLabel: { type: String },
     productName: { type: String, required: true },
     quantity: {
       type: Number,
@@ -141,7 +148,7 @@ const guestContactSchema = new Schema(
     },
     phone: { type: String, required: true, trim: true },
   },
-  { _id: false },
+  { _id: false }
 );
 
 const orderSchema = new Schema<IOrder>(
@@ -214,9 +221,6 @@ orderSchema.index({ user: 1, createdAt: -1 }); // user's order history
 orderSchema.index({ status: 1 }); // filter by status (admin dashboard)
 orderSchema.index({ idempotencyKey: 1 }, { unique: true }); // prevent duplicates
 orderSchema.index({ checkoutType: 1, createdAt: -1 });
-orderSchema.index(
-  { "guestContact.email": 1, createdAt: -1 },
-  { sparse: true },
-);
+orderSchema.index({ "guestContact.email": 1, createdAt: -1 }, { sparse: true });
 
 export const Order = mongoose.model<IOrder>("Order", orderSchema);
