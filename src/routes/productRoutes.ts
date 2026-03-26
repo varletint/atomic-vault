@@ -10,6 +10,7 @@ import {
 const router = Router();
 
 router.get("/categories", ProductController.getCategories);
+router.get("/brands", ProductController.getBrands);
 router.get("/sku/:sku", ProductController.getProductBySku);
 router.get("/", ProductController.getProducts);
 router.get("/:productId", ProductController.getProductById);
