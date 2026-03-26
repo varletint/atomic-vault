@@ -7,15 +7,11 @@ import {
   type IUser,
   type UserStatus,
 } from "../models/index.js";
-import {
-  sendPasswordResetOtpEmail,
-  sendVerificationEmail,
-} from "./EmailService.js";
+import { sendPasswordResetOtpEmail } from "./EmailService.js";
 import {
   generateAccessToken,
   generateRefreshToken,
   verifyRefreshToken,
-  generateEmailVerificationToken,
 } from "../utils/jwt.js";
 import {
   NotFoundError,
@@ -216,16 +212,6 @@ export class UserService {
       void removedPassword;
 
       const tokens = issueTokens(safeUser as IUser);
-
-      // Fire-and-forget: send verification email (does not block registration)
-      const verifyToken = generateEmailVerificationToken(user!._id.toString());
-      const appUrl =
-        process.env.APP_URL?.replace(/\/+$/, "") || "http://localhost:3000";
-      const verifyUrl = `${appUrl}/api/users/verify-email?token=${verifyToken}`;
-
-      sendVerificationEmail(data.email, verifyUrl).catch((err) =>
-        console.error("[UserService] Failed to send verification email:", err)
-      );
 
       return { user: safeUser as IUser, tokens };
     } catch (error) {
@@ -606,29 +592,6 @@ export class UserService {
     } finally {
       session.endSession();
     }
-  }
-
-  /**
-   * Resends the email verification link for an UNVERIFIED user.
-   */
-  static async resendVerificationEmail(userId: string): Promise<void> {
-    const user = await User.findById(userId).select(
-      "email status isEmailVerified"
-    );
-    if (!user) {
-      throw NotFoundError("User");
-    }
-
-    if (user.isEmailVerified || user.status !== "UNVERIFIED") {
-      throw ValidationError("Email is already verified.");
-    }
-
-    const verifyToken = generateEmailVerificationToken(userId);
-    const appUrl =
-      process.env.APP_URL?.replace(/\/+$/, "") || "http://localhost:3000";
-    const verifyUrl = `${appUrl}/api/users/verify-email?token=${verifyToken}`;
-
-    await sendVerificationEmail(user.email, verifyUrl);
   }
 
   /**
