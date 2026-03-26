@@ -1,6 +1,10 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../middleware/asyncHandler.js";
-import { ProductService } from "../services/ProductService.js";
+import {
+  ProductService,
+  type CreateProductInput,
+  type UpdateProductInput,
+} from "../services/ProductService.js";
 import { NotFoundError } from "../utils/AppError.js";
 import type { z } from "zod";
 import type {
@@ -12,20 +16,9 @@ export class ProductController {
   static createProduct = asyncHandler(async (req: Request, res: Response) => {
     const body = req.body as z.infer<typeof createProductSchema>;
 
-    const createData: Parameters<typeof ProductService.createProduct>[0] = {
-      name: body.name,
-      description: body.description,
-      price: body.price,
-      category: body.category,
-    };
-    if (body.compareAtPrice !== undefined)
-      createData.compareAtPrice = body.compareAtPrice;
-    if (body.costPrice !== undefined) createData.costPrice = body.costPrice;
-    if (body.imageUrl !== undefined) createData.imageUrl = body.imageUrl;
-    if (body.initialStock !== undefined)
-      createData.initialStock = body.initialStock;
-
-    const product = await ProductService.createProduct(createData);
+    const product = await ProductService.createProduct(
+      body as unknown as CreateProductInput
+    );
 
     res.status(201).json({
       success: true,
@@ -38,18 +31,10 @@ export class ProductController {
     const { productId } = req.params as { productId: string };
     const body = req.body as z.infer<typeof updateProductSchema>;
 
-    const updateData: Parameters<typeof ProductService.updateProduct>[1] = {};
-    if (body.name !== undefined) updateData.name = body.name;
-    if (body.description !== undefined)
-      updateData.description = body.description;
-    if (body.price !== undefined) updateData.price = body.price;
-    if (body.compareAtPrice !== undefined)
-      updateData.compareAtPrice = body.compareAtPrice;
-    if (body.costPrice !== undefined) updateData.costPrice = body.costPrice;
-    if (body.category !== undefined) updateData.category = body.category;
-    if (body.imageUrl !== undefined) updateData.imageUrl = body.imageUrl;
-
-    const product = await ProductService.updateProduct(productId, updateData);
+    const product = await ProductService.updateProduct(
+      productId,
+      body as unknown as UpdateProductInput
+    );
 
     res.status(200).json({
       success: true,
@@ -67,7 +52,7 @@ export class ProductController {
         message: "Product deactivated.",
         data: product,
       });
-    },
+    }
   );
 
   static reactivateProduct = asyncHandler(
@@ -79,7 +64,7 @@ export class ProductController {
         message: "Product reactivated.",
         data: product,
       });
-    },
+    }
   );
 
   static getProductById = asyncHandler(async (req: Request, res: Response) => {
@@ -101,12 +86,23 @@ export class ProductController {
 
     const filters = {
       category: query.category,
+      brand: query.brand,
+      tag: query.tag,
+      isFeatured:
+        query.isFeatured !== undefined
+          ? query.isFeatured === "true"
+          : undefined,
       minPrice: query.minPrice ? Number(query.minPrice) : undefined,
       maxPrice: query.maxPrice ? Number(query.maxPrice) : undefined,
       search: query.search,
       page: query.page ? Number(query.page) : undefined,
       limit: query.limit ? Number(query.limit) : undefined,
-      sortBy: query.sortBy as "price" | "name" | "createdAt" | undefined,
+      sortBy: query.sortBy as
+        | "price"
+        | "name"
+        | "createdAt"
+        | "avgRating"
+        | undefined,
       sortOrder: query.sortOrder as "asc" | "desc" | undefined,
     };
 
@@ -117,5 +113,10 @@ export class ProductController {
   static getCategories = asyncHandler(async (_req: Request, res: Response) => {
     const categories = await ProductService.getCategories();
     res.status(200).json({ success: true, data: categories });
+  });
+
+  static getBrands = asyncHandler(async (_req: Request, res: Response) => {
+    const brands = await ProductService.getBrands();
+    res.status(200).json({ success: true, data: brands });
   });
 }
