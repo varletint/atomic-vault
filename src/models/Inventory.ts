@@ -21,6 +21,7 @@ import mongoose, { Schema, type Document, type Types } from "mongoose";
 export interface IInventory extends Document {
   _id: Types.ObjectId;
   product: Types.ObjectId;
+  variant?: Types.ObjectId; // null = product-level stock (no variants)
   stock: number; // total physical stock
   reserved: number; // items reserved by pending orders
   version: number;
@@ -32,7 +33,10 @@ const inventorySchema = new Schema<IInventory>(
       type: Schema.Types.ObjectId,
       ref: "Product",
       required: true,
-      unique: true,
+    },
+    variant: {
+      type: Schema.Types.ObjectId,
+      default: null,
     },
     stock: {
       type: Number,
@@ -55,8 +59,8 @@ const inventorySchema = new Schema<IInventory>(
   }
 );
 
-// Ensure one inventory record per product
-inventorySchema.index({ product: 1 }, { unique: true });
+// One inventory record per product/variant combination
+inventorySchema.index({ product: 1, variant: 1 }, { unique: true });
 
 /**
  * Virtual: available stock = total stock - reserved items
