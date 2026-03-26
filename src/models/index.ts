@@ -13,7 +13,15 @@ export {
   PasswordResetOtp,
   type IPasswordResetOtp,
 } from "./PasswordResetOtp.js";
-export { Product, type IProduct } from "./Product.js";
+export {
+  Product,
+  type IProduct,
+  type IProductImage,
+  type IProductVariant,
+  type IVariantOption,
+  type IProductSeo,
+  type IDimensions,
+} from "./Product.js";
 export { Inventory, type IInventory } from "./Inventory.js";
 export { Cart, type ICart, type ICartItem } from "./Cart.js";
 export {
