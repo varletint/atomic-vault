@@ -113,10 +113,14 @@ async function getProductMeta(
       ? product.description.substring(0, 200)
       : `Buy ${product.name} on ${SITE_NAME}. Quality products with secure checkout and reliable delivery.`;
 
+    const primaryImage =
+      product.images.find((img) => img.isPrimary) ?? product.images[0];
+    const image = primaryImage?.url || defaultImage;
+
     return {
       title: `${product.name} | ${SITE_NAME}`,
       description,
-      image: product.imageUrl || defaultImage,
+      image,
       type: "product",
       url: `${siteUrl}/products/${product.slug}`,
     };
