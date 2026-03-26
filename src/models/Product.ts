@@ -1,20 +1,177 @@
 import mongoose, { Schema, type Document, type Types } from "mongoose";
 
+/* ─────────────────────────────────────────────
+ *  Sub-document interfaces
+ * ───────────────────────────────────────────── */
+
+export interface IProductImage {
+  url: string;
+  altText?: string;
+  sortOrder: number;
+  isPrimary: boolean;
+}
+
+export interface IVariantOption {
+  name: string; // e.g. "Size", "Color", "Material"
+  value: string; // e.g. "M", "Red", "Cotton"
+}
+
+export interface IProductVariant {
+  _id: Types.ObjectId;
+  sku: string;
+  variantOptions: IVariantOption[];
+  price: number;
+  compareAtPrice?: number;
+  costPrice?: number;
+  weight?: number;
+  images?: IProductImage[];
+  isActive: boolean;
+}
+
+export interface IProductSeo {
+  metaTitle?: string;
+  metaDescription?: string;
+  metaKeywords?: string[];
+}
+
+export interface IDimensions {
+  length?: number;
+  width?: number;
+  height?: number;
+  unit: "cm" | "in";
+}
+
+/* ─────────────────────────────────────────────
+ *  Main Product interface
+ * ───────────────────────────────────────────── */
+
 export interface IProduct extends Document {
   _id: Types.ObjectId;
   sku: string;
   slug: string;
   name: string;
+  shortDescription?: string;
   description: string;
   price: number;
   compareAtPrice?: number;
   costPrice?: number;
   category: string;
-  imageUrl?: string;
+  brand?: string;
+  tags: string[];
+  productType: "physical" | "digital" | "service";
+
+  // Images
+  images: IProductImage[];
+
+  // Variants
+  hasVariants: boolean;
+  variants: IProductVariant[];
+  variantOptionNames: string[]; // e.g. ["Size", "Color"]
+
+  // Shipping / physical
+  weight?: number;
+  weightUnit: "g" | "kg" | "lb" | "oz";
+  dimensions?: IDimensions;
+  material?: string;
+  careInstructions?: string;
+
+  // Merchandising
+  isFeatured: boolean;
+  avgRating: number;
+  reviewCount: number;
+  minOrderQty: number;
+
+  // SEO
+  seo?: IProductSeo;
+
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
+
+/* ─────────────────────────────────────────────
+ *  Sub-schemas
+ * ───────────────────────────────────────────── */
+
+const productImageSchema = new Schema<IProductImage>(
+  {
+    url: { type: String, required: true },
+    altText: { type: String },
+    sortOrder: { type: Number, default: 0 },
+    isPrimary: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
+
+const variantOptionSchema = new Schema<IVariantOption>(
+  {
+    name: { type: String, required: true, trim: true },
+    value: { type: String, required: true, trim: true },
+  },
+  { _id: false }
+);
+
+const productVariantSchema = new Schema<IProductVariant>(
+  {
+    sku: {
+      type: String,
+      required: true,
+      uppercase: true,
+      trim: true,
+    },
+    variantOptions: {
+      type: [variantOptionSchema],
+      required: true,
+      validate: [
+        (val: IVariantOption[]) => val.length > 0,
+        "Variant must have at least one option",
+      ],
+    },
+    price: {
+      type: Number,
+      required: true,
+      min: [0, "Variant price cannot be negative"],
+    },
+    compareAtPrice: {
+      type: Number,
+      min: [0, "Compare-at price cannot be negative"],
+    },
+    costPrice: {
+      type: Number,
+      min: [0, "Cost price cannot be negative"],
+    },
+    weight: {
+      type: Number,
+      min: [0, "Weight cannot be negative"],
+    },
+    images: { type: [productImageSchema], default: [] },
+    isActive: { type: Boolean, default: true },
+  }
+  // Variant sub-docs get their own _id (used as reference in Cart/Order/Inventory)
+);
+
+const productSeoSchema = new Schema<IProductSeo>(
+  {
+    metaTitle: { type: String, maxlength: 70 },
+    metaDescription: { type: String, maxlength: 160 },
+    metaKeywords: { type: [String], default: [] },
+  },
+  { _id: false }
+);
+
+const dimensionsSchema = new Schema<IDimensions>(
+  {
+    length: { type: Number, min: 0 },
+    width: { type: Number, min: 0 },
+    height: { type: Number, min: 0 },
+    unit: { type: String, enum: ["cm", "in"], default: "cm" },
+  },
+  { _id: false }
+);
+
+/* ─────────────────────────────────────────────
+ *  Product schema
+ * ───────────────────────────────────────────── */
 
 const productSchema = new Schema<IProduct>(
   {
@@ -33,6 +190,7 @@ const productSchema = new Schema<IProduct>(
       trim: true,
     },
     name: { type: String, required: true, trim: true },
+    shortDescription: { type: String, trim: true },
     description: { type: String, required: true },
     price: {
       type: Number,
@@ -48,17 +206,61 @@ const productSchema = new Schema<IProduct>(
       min: [0, "Cost price cannot be negative"],
     },
     category: { type: String, required: true, trim: true },
-    imageUrl: { type: String },
+    brand: { type: String, trim: true },
+    tags: { type: [String], default: [] },
+    productType: {
+      type: String,
+      enum: ["physical", "digital", "service"],
+      default: "physical",
+      required: true,
+    },
+
+    // Images
+    images: { type: [productImageSchema], default: [] },
+
+    // Variants
+    hasVariants: { type: Boolean, default: false },
+    variants: { type: [productVariantSchema], default: [] },
+    variantOptionNames: { type: [String], default: [] },
+
+    // Shipping / physical
+    weight: { type: Number, min: [0, "Weight cannot be negative"] },
+    weightUnit: {
+      type: String,
+      enum: ["g", "kg", "lb", "oz"],
+      default: "g",
+    },
+    dimensions: { type: dimensionsSchema },
+    material: { type: String, trim: true },
+    careInstructions: { type: String },
+
+    // Merchandising
+    isFeatured: { type: Boolean, default: false },
+    avgRating: { type: Number, default: 0, min: 0, max: 5 },
+    reviewCount: { type: Number, default: 0, min: 0 },
+    minOrderQty: { type: Number, default: 1, min: 1 },
+
+    // SEO
+    seo: { type: productSeoSchema },
+
     isActive: { type: Boolean, default: true },
   },
   {
     timestamps: true,
-  },
+  }
 );
+
+/* ─────────────────────────────────────────────
+ *  Indexes
+ * ───────────────────────────────────────────── */
 
 productSchema.index({ category: 1, isActive: 1 });
 productSchema.index({ name: "text", description: "text" });
 productSchema.index({ sku: 1 }, { unique: true });
 productSchema.index({ slug: 1 }, { unique: true });
+productSchema.index({ brand: 1, isActive: 1 });
+productSchema.index({ tags: 1 });
+productSchema.index({ isFeatured: 1, isActive: 1 });
+productSchema.index({ "variants.sku": 1 });
 
 export const Product = mongoose.model<IProduct>("Product", productSchema);
