@@ -11,6 +11,8 @@ import mongoose, { Schema, type Document, type Types } from "mongoose";
 
 export interface ICartItem {
   product: Types.ObjectId;
+  variant?: Types.ObjectId; // references a variant sub-doc _id
+  variantLabel?: string; // snapshot: "Red / M"
   quantity: number;
   priceAtAdd: number; // price in cents when item was added (snapshot)
 }
@@ -30,6 +32,11 @@ const cartItemSchema = new Schema<ICartItem>(
       ref: "Product",
       required: true,
     },
+    variant: {
+      type: Schema.Types.ObjectId,
+      default: null,
+    },
+    variantLabel: { type: String },
     quantity: {
       type: Number,
       required: true,
