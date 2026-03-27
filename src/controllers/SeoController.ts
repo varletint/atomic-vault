@@ -54,9 +54,6 @@ export class SeoController {
     }
   }
 
-  /**
-   * Static pages sitemap — indexable, public-facing routes.
-   */
   public static async getStaticSitemap(
     req: Request,
     res: Response,
