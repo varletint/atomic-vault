@@ -7,10 +7,14 @@ import {
   type IUser,
   type UserStatus,
 } from "../models/index.js";
-import { sendPasswordResetOtpEmail } from "./EmailService.js";
+import {
+  sendPasswordResetOtpEmail,
+  sendVerificationEmail,
+} from "./EmailService.js";
 import {
   generateAccessToken,
   generateRefreshToken,
+  generateEmailVerificationToken,
   verifyRefreshToken,
 } from "../utils/jwt.js";
 import {
@@ -111,6 +115,12 @@ const LOCKOUT_MINUTES = Math.max(
 
 const LOCKOUT_MS = LOCKOUT_MINUTES * 60 * 1000;
 
+/** Base URL of the frontend app for verification links */
+const CLIENT_URL = (process.env.CLIENT_URL ?? "http://localhost:5173").replace(
+  /\/$/,
+  ""
+);
+
 /** OTP validity window (minutes). Env: PASSWORD_RESET_OTP_TTL_MINUTES, default 15, min 5 */
 const PASSWORD_RESET_OTP_TTL_MINUTES = Math.max(
   5,
@@ -205,6 +215,24 @@ export class UserService {
       );
 
       await session.commitTransaction();
+
+      // Send verification email (don't block registration on failure)
+      try {
+        const verifyToken = generateEmailVerificationToken(
+          user!._id.toString()
+        );
+        const verifyUrl = `${CLIENT_URL}/verify-email?token=${verifyToken}`;
+        console.log(
+          `[UserService] Sending verification email to ${data.email}…`
+        );
+        await sendVerificationEmail(data.email, verifyUrl);
+        console.log(`[UserService] Verification email sent to ${data.email}`);
+      } catch (emailErr) {
+        console.error(
+          `[UserService] FAILED to send verification email to ${data.email}:`,
+          emailErr
+        );
+      }
 
       // Strip password before returning
       const { password: removedPassword, ...safeUser } =
@@ -592,6 +620,29 @@ export class UserService {
     } finally {
       session.endSession();
     }
+  }
+
+  /**
+   * Re-sends the verification email for an unverified user.
+   * Validates the user is still UNVERIFIED before sending.
+   */
+  static async resendVerificationEmail(userId: string): Promise<void> {
+    const user = await User.findById(userId).select(
+      "email status isEmailVerified"
+    );
+
+    if (!user) {
+      throw NotFoundError("User");
+    }
+
+    if (user.isEmailVerified || user.status !== "UNVERIFIED") {
+      throw ValidationError("Email is already verified.");
+    }
+
+    const verifyToken = generateEmailVerificationToken(userId);
+    const verifyUrl = `${CLIENT_URL}/verify-email?token=${verifyToken}`;
+
+    await sendVerificationEmail(user.email, verifyUrl);
   }
 
   /**

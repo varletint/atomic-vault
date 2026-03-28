@@ -6,6 +6,21 @@ const OTP_TTL_MINUTES = Math.max(
 );
 
 function createTransport() {
+  // Primary: use EMAIL_USER / EMAIL_PASS (Gmail App Password)
+  const emailUser = process.env.EMAIL_USER?.trim();
+  const emailPass = process.env.EMAIL_PASS?.trim();
+
+  if (emailUser && emailPass) {
+    return nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: emailUser,
+        pass: emailPass,
+      },
+    });
+  }
+
+  // Fallback: generic SMTP config
   const host = process.env.SMTP_HOST?.trim();
   if (!host) return null;
 
@@ -35,7 +50,10 @@ export async function sendPasswordResetOtpEmail(
   to: string,
   otp: string
 ): Promise<void> {
-  const from = process.env.SMTP_FROM?.trim() ?? '"Order" <noreply@example.com>';
+  const from =
+    process.env.SMTP_FROM?.trim() ??
+    process.env.EMAIL_USER?.trim() ??
+    '"Order" <noreply@example.com>';
   const subject =
     process.env.PASSWORD_RESET_EMAIL_SUBJECT?.trim() ??
     "Your password reset code";
@@ -67,7 +85,10 @@ export async function sendVerificationEmail(
   to: string,
   verifyUrl: string
 ): Promise<void> {
-  const from = process.env.SMTP_FROM?.trim() ?? '"Order" <noreply@example.com>';
+  const from =
+    process.env.SMTP_FROM?.trim() ??
+    process.env.EMAIL_USER?.trim() ??
+    '"Order" <noreply@example.com>';
   const subject = "Verify your email address";
   const text = `Click the link below to verify your email address:\n\n${verifyUrl}\n\nThis link will expire in 24 hours. If you did not create an account, you can ignore this email.`;
 
@@ -75,14 +96,16 @@ export async function sendVerificationEmail(
   if (!transport) {
     if (process.env.NODE_ENV === "production") {
       throw new Error(
-        "SMTP_HOST is required in production for verification emails"
+        "EMAIL_USER/EMAIL_PASS (or SMTP_HOST) is required in production for verification emails"
       );
     }
     console.warn(
-      `[EmailService] SMTP_HOST not set; verification URL for ${to}: ${verifyUrl}`
+      `[EmailService] No email transport configured; verification URL for ${to}: ${verifyUrl}`
     );
     return;
   }
 
+  console.log(`[EmailService] Sending verification email to ${to}…`);
   await transport.sendMail({ from, to, subject, text });
+  console.log(`[EmailService] Verification email sent to ${to}`);
 }
