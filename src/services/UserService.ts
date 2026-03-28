@@ -18,6 +18,7 @@ import {
   verifyRefreshToken,
 } from "../utils/jwt.js";
 import {
+  AppError,
   NotFoundError,
   DuplicateError,
   FsmError,
@@ -311,6 +312,14 @@ export class UserService {
     }
 
     // Only ACTIVE or SUSPENDED users can log in
+    if (user.status === "UNVERIFIED") {
+      throw new AppError(
+        "Please verify your email before logging in.",
+        403,
+        "EMAIL_NOT_VERIFIED"
+      );
+    }
+
     if (user.status !== "ACTIVE" && user.status !== "SUSPENDED") {
       throw ForbiddenError(`Login denied. Account status is "${user.status}".`);
     }
