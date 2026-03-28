@@ -635,20 +635,22 @@ export class UserService {
    * Re-sends the verification email for an unverified user.
    * Validates the user is still UNVERIFIED before sending.
    */
-  static async resendVerificationEmail(userId: string): Promise<void> {
-    const user = await User.findById(userId).select(
-      "email status isEmailVerified"
+  static async resendVerificationEmail(email: string): Promise<void> {
+    console.log("Resending verification email for:", email);
+    const normalizedEmail = email.toLowerCase().trim();
+
+    const user = await User.findOne({ email: normalizedEmail }).select(
+      "_id email status isEmailVerified"
     );
 
-    if (!user) {
-      throw NotFoundError("User");
-    }
+    // Silent return for unknown emails (no enumeration)
+    if (!user) return;
 
     if (user.isEmailVerified || user.status !== "UNVERIFIED") {
       throw ValidationError("Email is already verified.");
     }
 
-    const verifyToken = generateEmailVerificationToken(userId);
+    const verifyToken = generateEmailVerificationToken(user._id.toString());
     const verifyUrl = `${CLIENT_URL}/verify-email?token=${verifyToken}`;
 
     await sendVerificationEmail(user.email, verifyUrl);

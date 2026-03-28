@@ -179,13 +179,18 @@ export class UserController {
 
   static resendVerificationEmail = asyncHandler(
     async (req: Request, res: Response) => {
-      const userId = req.user!.userId;
+      const { email } = req.body as { email: string };
 
-      await UserService.resendVerificationEmail(userId);
+      if (!email || typeof email !== "string") {
+        throw ValidationError("Email is required.");
+      }
+
+      await UserService.resendVerificationEmail(email);
 
       res.status(200).json({
         success: true,
-        message: "Verification email sent. Please check your inbox.",
+        message:
+          "If the email is registered and unverified, a verification link has been sent.",
       });
     }
   );

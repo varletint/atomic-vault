@@ -36,12 +36,8 @@ router.post(
 // Public: verify email via signed token link
 router.get("/verify-email", UserController.verifyEmailByToken);
 
-// Authenticated: request a new verification email
-router.post(
-  "/resend-verification",
-  authMiddleware,
-  UserController.resendVerificationEmail
-);
+// Public: resend verification email (accepts { email } in body)
+router.post("/resend-verification", UserController.resendVerificationEmail);
 
 router.patch(
   "/:userId/verify-email",

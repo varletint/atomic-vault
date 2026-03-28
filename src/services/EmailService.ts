@@ -5,19 +5,28 @@ const OTP_TTL_MINUTES = Math.max(
   parseInt(process.env.PASSWORD_RESET_OTP_TTL_MINUTES ?? "15", 10) || 15
 );
 
-function createTransport() {
+interface TransportResult {
+  transport: ReturnType<typeof nodemailer.createTransport>;
+  from: string;
+}
+
+function createTransport(): TransportResult | null {
   // Primary: use EMAIL_USER / EMAIL_PASS (Gmail App Password)
   const emailUser = process.env.EMAIL_USER?.trim();
   const emailPass = process.env.EMAIL_PASS?.trim();
 
   if (emailUser && emailPass) {
-    return nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: emailUser,
-        pass: emailPass,
-      },
-    });
+    return {
+      transport: nodemailer.createTransport({
+        service: "gmail",
+        auth: {
+          user: emailUser,
+          pass: emailPass,
+        },
+      }),
+      // Gmail requires from to match the authenticated account
+      from: emailUser,
+    };
   }
 
   // Fallback: generic SMTP config
@@ -28,18 +37,21 @@ function createTransport() {
   const user = process.env.SMTP_USER?.trim();
   const pass = process.env.SMTP_PASS?.trim();
 
-  return nodemailer.createTransport({
-    host,
-    port,
-    secure: process.env.SMTP_SECURE === "true",
-    auth:
-      user && pass
-        ? {
-            user,
-            pass,
-          }
-        : undefined,
-  });
+  return {
+    transport: nodemailer.createTransport({
+      host,
+      port,
+      secure: process.env.SMTP_SECURE === "true",
+      auth:
+        user && pass
+          ? {
+              user,
+              pass,
+            }
+          : undefined,
+    }),
+    from: process.env.SMTP_FROM?.trim() ?? '"Order" <noreply@example.com>',
+  };
 }
 
 /**
@@ -50,10 +62,6 @@ export async function sendPasswordResetOtpEmail(
   to: string,
   otp: string
 ): Promise<void> {
-  const from =
-    process.env.SMTP_FROM?.trim() ??
-    process.env.EMAIL_USER?.trim() ??
-    '"Order" <noreply@example.com>';
   const subject =
     process.env.PASSWORD_RESET_EMAIL_SUBJECT?.trim() ??
     "Your password reset code";
@@ -61,20 +69,20 @@ export async function sendPasswordResetOtpEmail(
 
 It expires in ${OTP_TTL_MINUTES} minutes. If you did not request this, you can ignore this email.`;
 
-  const transport = createTransport();
-  if (!transport) {
+  const result = createTransport();
+  if (!result) {
     if (process.env.NODE_ENV === "production") {
       throw new Error(
-        "SMTP_HOST is required in production for password reset emails"
+        "Email transport is required in production for password reset emails"
       );
     }
     console.warn(
-      `[EmailService] SMTP_HOST not set; password reset OTP for ${to}: ${otp}`
+      `[EmailService] No email transport configured; password reset OTP for ${to}: ${otp}`
     );
     return;
   }
 
-  await transport.sendMail({ from, to, subject, text });
+  await result.transport.sendMail({ from: result.from, to, subject, text });
 }
 
 /**
@@ -85,18 +93,15 @@ export async function sendVerificationEmail(
   to: string,
   verifyUrl: string
 ): Promise<void> {
-  const from =
-    process.env.SMTP_FROM?.trim() ??
-    process.env.EMAIL_USER?.trim() ??
-    '"Order" <noreply@example.com>';
   const subject = "Verify your email address";
   const text = `Click the link below to verify your email address:\n\n${verifyUrl}\n\nThis link will expire in 24 hours. If you did not create an account, you can ignore this email.`;
 
-  const transport = createTransport();
-  if (!transport) {
+  const result = createTransport();
+  console.log("Email result:", result);
+  if (!result) {
     if (process.env.NODE_ENV === "production") {
       throw new Error(
-        "EMAIL_USER/EMAIL_PASS (or SMTP_HOST) is required in production for verification emails"
+        "Email transport is required in production for verification emails"
       );
     }
     console.warn(
@@ -106,6 +111,6 @@ export async function sendVerificationEmail(
   }
 
   console.log(`[EmailService] Sending verification email to ${to}…`);
-  await transport.sendMail({ from, to, subject, text });
+  await result.transport.sendMail({ from: result.from, to, subject, text });
   console.log(`[EmailService] Verification email sent to ${to}`);
 }
