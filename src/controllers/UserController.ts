@@ -16,10 +16,12 @@ import type {
   updateProfileSchema,
 } from "../schemas/userSchemas.js";
 
+const IS_PROD = process.env.NODE_ENV === "production";
+
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: "none" as const,
+  secure: IS_PROD,
+  sameSite: IS_PROD ? ("none" as const) : ("lax" as const),
 };
 
 function setAuthCookies(
