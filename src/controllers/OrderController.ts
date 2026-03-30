@@ -10,6 +10,7 @@ import type {
   processPaymentSchema,
   reasonSchema,
   noteSchema,
+  addTrackingEventSchema,
 } from "../schemas/orderSchemas.js";
 
 export class OrderController {
@@ -34,7 +35,7 @@ export class OrderController {
           "Guest order created. Pay with an instant method (card, USSD, transfer, or wallet).",
         data: order,
       });
-    },
+    }
   );
 
   static getGuestOrder = asyncHandler(async (req: Request, res: Response) => {
@@ -59,7 +60,7 @@ export class OrderController {
     const order = await OrderService.createOrder(
       userId,
       idempotencyKey,
-      shippingAddress,
+      shippingAddress
     );
     res
       .status(201)
@@ -79,7 +80,7 @@ export class OrderController {
     const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
     const limit = Math.min(
       100,
-      Math.max(1, parseInt(req.query.limit as string, 10) || 20),
+      Math.max(1, parseInt(req.query.limit as string, 10) || 20)
     );
 
     const result = await OrderService.getUserOrders(userId, page, limit);
@@ -141,7 +142,7 @@ export class OrderController {
       body.paymentMethod,
       body.provider,
       body.idempotencyKey,
-      body.callbackUrl,
+      body.callbackUrl
     );
 
     res.status(200).json({
@@ -186,7 +187,7 @@ export class OrderController {
     const rawBody = JSON.stringify(req.body);
     const isValid = PaystackService.validateWebhookSignature(
       rawBody,
-      signature,
+      signature
     );
 
     if (!isValid) {
@@ -202,4 +203,32 @@ export class OrderController {
 
     res.status(200).json({ success: true });
   });
+
+  static getTrackingEvents = asyncHandler(
+    async (req: Request, res: Response) => {
+      const { orderId } = req.params as { orderId: string };
+      const trackingEvents = await OrderService.getTrackingEvents(orderId);
+      res.status(200).json({ success: true, data: trackingEvents });
+    }
+  );
+
+  static addTrackingEvent = asyncHandler(
+    async (req: Request, res: Response) => {
+      const { orderId } = req.params as { orderId: string };
+      const body = req.body as z.infer<typeof addTrackingEventSchema>;
+
+      const event = await OrderService.addTrackingEvent(
+        orderId,
+        body.status,
+        body.description,
+        body.location
+      );
+
+      res.status(201).json({
+        success: true,
+        message: "Tracking event added successfully.",
+        data: event,
+      });
+    }
+  );
 }

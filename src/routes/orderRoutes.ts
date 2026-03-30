@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { OrderController } from "../controllers/OrderController.js";
 import { authMiddleware } from "../middleware/authMiddleware.js";
+import { requireRole } from "../middleware/requireRole.js";
 import { validate } from "../middleware/validate.js";
 import {
   createOrderSchema,
@@ -8,6 +9,7 @@ import {
   processPaymentSchema,
   reasonSchema,
   noteSchema,
+  addTrackingEventSchema,
 } from "../schemas/orderSchemas.js";
 
 const router = Router();
@@ -48,6 +50,14 @@ router.post(
 router.get(
   "/:orderId/payment/verify/:reference",
   OrderController.verifyPayment
+);
+
+router.get("/:orderId/tracking", OrderController.getTrackingEvents);
+router.post(
+  "/:orderId/tracking",
+  requireRole(["ADMIN", "SUPERADMIN"]),
+  validate(addTrackingEventSchema),
+  OrderController.addTrackingEvent
 );
 
 export default router;
