@@ -42,7 +42,7 @@ export const createGuestOrderSchema = z.object({
 
 export const processPaymentSchema = z.object({
   paymentMethod: z.enum(paymentMethods, {
-    errorMap: () => ({ message: "Invalid payment method" }),
+    invalid_type_error: "Invalid payment method",
   }),
   provider: z.string().min(1, "Provider is required"),
   idempotencyKey: z.string().min(1, "Idempotency key is required"),
@@ -55,4 +55,17 @@ export const reasonSchema = z.object({
 
 export const noteSchema = z.object({
   note: z.string().optional(),
+});
+
+export const addTrackingEventSchema = z.object({
+  status: z.enum([
+    "PENDING",
+    "CONFIRMED",
+    "SHIPPED",
+    "DELIVERED",
+    "CANCELLED",
+    "FAILED",
+  ]),
+  description: z.string().min(1, "Description is required"),
+  location: z.string().optional(),
 });

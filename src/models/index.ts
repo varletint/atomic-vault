@@ -38,3 +38,4 @@ export {
   type TransactionStatus,
   type PaymentMethod,
 } from "./Transaction.js";
+export { TrackingEvent, type ITrackingEvent } from "./TrackingEvent.js";
