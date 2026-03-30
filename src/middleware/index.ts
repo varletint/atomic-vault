@@ -8,3 +8,8 @@ export { authMiddleware } from "./authMiddleware.js";
 export { requireRole } from "./requireRole.js";
 export { requireSelfOrAdmin } from "./requireSelfOrAdmin.js";
 export { ogBotMiddleware } from "./ogBotMiddleware.js";
+export {
+  emailResendLimiter,
+  forgotPasswordLimiter,
+  resetPasswordLimiter,
+} from "./rateLimiter.js";
