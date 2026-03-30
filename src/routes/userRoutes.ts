@@ -4,6 +4,9 @@ import {
   authMiddleware,
   requireRole,
   requireSelfOrAdmin,
+  emailResendLimiter,
+  forgotPasswordLimiter,
+  resetPasswordLimiter,
 } from "../middleware/index.js";
 import { validate } from "../middleware/validate.js";
 import {
@@ -24,11 +27,13 @@ router.post("/logout", UserController.logout);
 
 router.post(
   "/forgot-password",
+  forgotPasswordLimiter,
   validate(forgotPasswordSchema),
   UserController.requestPasswordReset
 );
 router.post(
   "/reset-password",
+  resetPasswordLimiter,
   validate(resetPasswordSchema),
   UserController.resetPassword
 );
@@ -37,7 +42,11 @@ router.post(
 router.get("/verify-email", UserController.verifyEmailByToken);
 
 // Public: resend verification email (accepts { email } in body)
-router.post("/resend-verification", UserController.resendVerificationEmail);
+router.post(
+  "/resend-verification",
+  emailResendLimiter,
+  UserController.resendVerificationEmail
+);
 
 router.patch(
   "/:userId/verify-email",

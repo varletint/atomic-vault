@@ -40,6 +40,7 @@ export interface IUser extends Document {
     lastLoginIp?: string;
     lastLoginDevice?: string;
     passwordChangedAt?: Date;
+    lastVerificationEmailSentAt?: Date;
     tokenVersion: number;
     mfa: {
       enabled: boolean;
@@ -116,6 +117,7 @@ const authSchema = new Schema(
     lastLoginIp: { type: String },
     lastLoginDevice: { type: String },
     passwordChangedAt: { type: Date },
+    lastVerificationEmailSentAt: { type: Date },
     tokenVersion: { type: Number, default: 0, min: 0 },
     mfa: { type: mfaSchema, default: () => ({}) },
   },

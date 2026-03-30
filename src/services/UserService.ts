@@ -640,7 +640,7 @@ export class UserService {
     const normalizedEmail = email.toLowerCase().trim();
 
     const user = await User.findOne({ email: normalizedEmail }).select(
-      "_id email status isEmailVerified"
+      "_id email status isEmailVerified auth"
     );
 
     // Silent return for unknown emails (no enumeration)
@@ -649,6 +649,32 @@ export class UserService {
     if (user.isEmailVerified || user.status !== "UNVERIFIED") {
       throw ValidationError("Email is already verified.");
     }
+
+    // DB-level rate limit: enforce 60-second cooldown per user
+    const lastSent = user.auth?.lastVerificationEmailSentAt;
+    if (lastSent) {
+      const elapsed = Date.now() - new Date(lastSent).getTime();
+      if (elapsed < 60_000) {
+        // Silently return – the IP-based limiter already sends a proper 429
+        return;
+      }
+    }
+
+    // Record the send timestamp
+    if (!user.auth) {
+      user.auth = {
+        failedLoginAttempts: 0,
+        tokenVersion: 0,
+        mfa: {
+          enabled: false,
+          method: "NONE",
+          backupCodesHash: [],
+        },
+      };
+    }
+    user.auth.lastVerificationEmailSentAt = new Date();
+    (user as mongoose.Document).markModified("auth");
+    await user.save();
 
     const verifyToken = generateEmailVerificationToken(user._id.toString());
     const verifyUrl = `${CLIENT_URL}/verify-email?token=${verifyToken}`;

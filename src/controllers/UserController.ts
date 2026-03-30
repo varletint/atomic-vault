@@ -119,6 +119,7 @@ export class UserController {
         success: true,
         message:
           "If an account exists for that email, a reset code has been sent.",
+        retryAfter: 60,
       });
     }
   );
@@ -193,6 +194,7 @@ export class UserController {
         success: true,
         message:
           "If the email is registered and unverified, a verification link has been sent.",
+        retryAfter: 60,
       });
     }
   );
