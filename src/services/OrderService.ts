@@ -10,6 +10,7 @@ import {
   type ITransaction,
   type PaymentMethod,
   User,
+  TrackingEvent,
 } from "../models/index.js";
 import { NotFoundError, ValidationError, FsmError } from "../utils/AppError.js";
 import { InventoryService } from "./InventoryService.js";
@@ -162,6 +163,17 @@ export class OrderService {
 
       if (!order) throw new Error("Failed to create order");
 
+      await TrackingEvent.create(
+        [
+          {
+            orderId: order._id,
+            status: "PENDING",
+            description: "Order created",
+          },
+        ],
+        { session }
+      );
+
       cart.items = [];
       await cart.save({ session });
 
@@ -280,6 +292,17 @@ export class OrderService {
 
       if (!order) throw new Error("Failed to create order");
 
+      await TrackingEvent.create(
+        [
+          {
+            orderId: order._id,
+            status: "PENDING",
+            description: "Guest order created",
+          },
+        ],
+        { session }
+      );
+
       await session.commitTransaction();
       return order.toObject() as IOrder;
     } catch (error) {
@@ -370,6 +393,17 @@ export class OrderService {
       };
       if (note) historyEntry.note = note;
       order.statusHistory.push(historyEntry);
+
+      await TrackingEvent.create(
+        [
+          {
+            orderId: order._id,
+            status: nextStatus,
+            description: note || `Order marked as ${nextStatus}`,
+          },
+        ],
+        { session }
+      );
 
       await order.save({ session });
       await session.commitTransaction();
@@ -636,6 +670,16 @@ export class OrderService {
           timestamp: new Date(),
           note: "Payment verified successfully",
         });
+        await TrackingEvent.create(
+          [
+            {
+              orderId: order._id,
+              status: "CONFIRMED",
+              description: "Payment verified successfully",
+            },
+          ],
+          { session }
+        );
       } else {
         transaction.status = "FAILED";
         transaction.failureReason =
@@ -652,11 +696,16 @@ export class OrderService {
         }
 
         order.status = "FAILED";
+        const failureNote = transaction.failureReason || "Payment failed";
         order.statusHistory.push({
           status: "FAILED",
           timestamp: new Date(),
-          note: transaction.failureReason,
+          note: failureNote,
         });
+        await TrackingEvent.create(
+          [{ orderId: order._id, status: "FAILED", description: failureNote }],
+          { session }
+        );
       }
 
       await order.save({ session });
@@ -672,5 +721,51 @@ export class OrderService {
     } finally {
       session.endSession();
     }
+  }
+  static async getTrackingEvents(orderId: string): Promise<ITrackingEvent[]> {
+    const order = await Order.findById(orderId).lean();
+    if (!order) {
+      throw new NotFoundError("Order not found.");
+    }
+
+    // Fetch tracking events sorted by timestamp descending
+    return TrackingEvent.find({ orderId }).sort({ timestamp: -1 }).lean();
+  }
+
+  static async addTrackingEvent(
+    orderId: string,
+    status: OrderStatus,
+    description: string,
+    location?: string
+  ): Promise<ITrackingEvent> {
+    const order = await Order.findById(orderId);
+    if (!order) {
+      throw new NotFoundError("Order not found.");
+    }
+
+    const event = new TrackingEvent({
+      orderId,
+      status,
+      description,
+      location,
+      timestamp: new Date(),
+    });
+
+    await event.save();
+
+    // Optionally update the high-level order status if it differs
+    // and make sure it's a valid transition to prevent breaking the state machine.
+    if (order.status !== status) {
+      assertValidTransition(order.status, status);
+      order.status = status;
+      order.statusHistory.push({
+        status,
+        timestamp: new Date(),
+        note: description,
+      });
+      await order.save();
+    }
+
+    return event;
   }
 }
