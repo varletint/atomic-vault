@@ -196,8 +196,6 @@ export class ProductService {
         createPayload.careInstructions = data.careInstructions;
       if (data.seo !== undefined) createPayload.seo = data.seo;
 
-      // Use `as any` to bypass Mongoose create() overload type conflicts
-      // with exactOptionalPropertyTypes — runtime behavior is correct
       const results = await Product.create([createPayload] as any, { session });
       const created = results[0]! as unknown as IProduct;
 
