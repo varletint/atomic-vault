@@ -13,6 +13,7 @@ import {
   cartRoutes,
   orderRoutes,
   seoRoutes,
+  storageRoutes,
 } from "./routes/index.js";
 
 const app = express();
@@ -38,6 +39,7 @@ app.get("/", (_req: Request, res: Response) => {
       inventory: "/api/inventory",
       cart: "/api/cart",
       orders: "/api/orders",
+      storage: "/api/storage",
     },
   });
 });
@@ -57,6 +59,7 @@ app.use("/api/products", productRoutes);
 app.use("/api/inventory", inventoryRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/orders", orderRoutes);
+app.use("/api/storage", storageRoutes);
 
 // Mount SEO routes at the root level
 app.use("/", seoRoutes);
