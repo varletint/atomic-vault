@@ -1,5 +1,34 @@
 import nodemailer from "nodemailer";
 
+export type SendEmailParams = {
+  to: string;
+  subject: string;
+  html: string;
+  text?: string;
+};
+
+export class EmailService {
+  static async sendEmail(params: SendEmailParams): Promise<{
+    provider: string;
+    messageId: string;
+  }> {
+    const result = createTransport();
+    if (!result) {
+      throw new Error("Email transport is not configured.");
+    }
+
+    const info = await result.transport.sendMail({
+      from: result.from,
+      to: params.to,
+      subject: params.subject,
+      html: params.html,
+      text: params.text,
+    });
+
+    return { provider: "smtp", messageId: info.messageId ?? "" };
+  }
+}
+
 const OTP_TTL_MINUTES = Math.max(
   5,
   parseInt(process.env.PASSWORD_RESET_OTP_TTL_MINUTES ?? "15", 10) || 15
