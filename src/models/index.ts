@@ -39,3 +39,17 @@ export {
   type PaymentMethod,
 } from "./Transaction.js";
 export { TrackingEvent, type ITrackingEvent } from "./TrackingEvent.js";
+export {
+  OutboxEvent,
+  type IOutboxEvent,
+  type OutboxEventType,
+  type OutboxStatus,
+} from "./OutboxEvent.js";
+export {
+  NotificationLog,
+  type INotificationLog,
+  type NotificationChannel,
+  type NotificationStatus,
+  type NotificationType,
+} from "./NotificationLog.js";
+export { OrderDocument, type IOrderDocument, type OrderDocumentType } from "./OrderDocument.js";
