@@ -11,10 +11,12 @@ import {
   type PaymentMethod,
   User,
   TrackingEvent,
+  type ITrackingEvent,
 } from "../models/index.js";
 import { NotFoundError, ValidationError, FsmError } from "../utils/AppError.js";
 import { InventoryService } from "./InventoryService.js";
 import { resolveGateway, type ChargeParams } from "./PaymentGateway.js";
+import { OutboxService } from "./OutboxService.js";
 import {
   ORDER_GUEST_MAX_ITEMS_TOTAL_KOBO,
   ORDER_GUEST_MAX_ITEMS_TOTAL_NGN,
@@ -680,6 +682,19 @@ export class OrderService {
           ],
           { session }
         );
+
+        await OutboxService.enqueue(
+          {
+            type: "ORDER_COMPLETED",
+            dedupeKey: `order:${order._id.toString()}:completed`,
+            payload: {
+              orderId: order._id.toString(),
+              transactionId: transaction._id.toString(),
+              paymentReference: reference,
+            },
+          },
+          session
+        );
       } else {
         transaction.status = "FAILED";
         transaction.failureReason =
@@ -725,11 +740,13 @@ export class OrderService {
   static async getTrackingEvents(orderId: string): Promise<ITrackingEvent[]> {
     const order = await Order.findById(orderId).lean();
     if (!order) {
-      throw new NotFoundError("Order not found.");
+      throw NotFoundError("Order");
     }
 
     // Fetch tracking events sorted by timestamp descending
-    return TrackingEvent.find({ orderId }).sort({ timestamp: -1 }).lean();
+    return TrackingEvent.find({ orderId })
+      .sort({ timestamp: -1 })
+      .lean<ITrackingEvent[]>();
   }
 
   static async addTrackingEvent(
@@ -740,18 +757,24 @@ export class OrderService {
   ): Promise<ITrackingEvent> {
     const order = await Order.findById(orderId);
     if (!order) {
-      throw new NotFoundError("Order not found.");
+      throw NotFoundError("Order");
     }
 
-    const event = new TrackingEvent({
+    const eventData: {
+      orderId: string;
+      status: OrderStatus;
+      description: string;
+      timestamp: Date;
+      location?: string;
+    } = {
       orderId,
       status,
       description,
-      location,
       timestamp: new Date(),
-    });
+    };
+    if (location) eventData.location = location;
 
-    await event.save();
+    const event = (await TrackingEvent.create(eventData)) as unknown as ITrackingEvent;
 
     // Optionally update the high-level order status if it differs
     // and make sure it's a valid transition to prevent breaking the state machine.
@@ -766,6 +789,6 @@ export class OrderService {
       await order.save();
     }
 
-    return event;
+    return event.toObject() as ITrackingEvent;
   }
 }
