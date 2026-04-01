@@ -14,8 +14,6 @@ import {
 
 const router = Router();
 
-router.post("/webhook/paystack", OrderController.paystackWebhook);
-
 router.post(
   "/guest",
   validate(createGuestOrderSchema),

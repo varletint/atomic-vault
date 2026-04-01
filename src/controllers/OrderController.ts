@@ -184,7 +184,13 @@ export class OrderController {
       return;
     }
 
-    const rawBody = JSON.stringify(req.body);
+    const rawBody =
+      req.body instanceof Buffer
+        ? req.body
+        : Buffer.from(
+            typeof req.body === "string" ? req.body : JSON.stringify(req.body),
+            "utf8"
+          );
     const isValid = PaystackService.validateWebhookSignature(
       rawBody,
       signature
@@ -195,10 +201,19 @@ export class OrderController {
       return;
     }
 
-    const event = req.body as { event: string; data: { reference: string } };
+    let payload: unknown;
+    try {
+      payload = JSON.parse(rawBody.toString("utf8")) as unknown;
+    } catch {
+      res.status(400).json({ success: false, message: "Invalid JSON body." });
+      return;
+    }
 
-    if (event.event === "charge.success") {
-      await OrderService.verifyPayment(event.data.reference);
+    const event = payload as { event?: string; data?: { reference?: string } };
+
+    const reference = event.data?.reference;
+    if (event.event === "charge.success" && reference) {
+      await OrderService.verifyPayment(reference);
     }
 
     res.status(200).json({ success: true });

@@ -5,6 +5,7 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import { corsOptions, devCorsOptions } from "./config/cors.js";
 import { errorHandler } from "./middleware/errorHandler.js";
+import { OrderController } from "./controllers/OrderController.js";
 
 import {
   userRoutes,
@@ -24,6 +25,15 @@ const MONGODB_URI =
 const isDevelopment = process.env.NODE_ENV !== "production";
 
 app.use(isDevelopment ? cors(devCorsOptions) : cors(corsOptions));
+
+// Paystack requires the raw request body for webhook signature verification.
+// This MUST be mounted before `express.json()`.
+app.post(
+  "/api/orders/webhook/paystack",
+  express.raw({ type: "application/json" }),
+  OrderController.paystackWebhook
+);
+
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
