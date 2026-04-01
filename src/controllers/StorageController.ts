@@ -40,9 +40,6 @@ export class StorageController {
   /**
    * POST /api/storage/confirm
    * Body: { moves: { tempKey: string, finalKey: string }[] }
-   *
-   * Promote temp objects to their permanent keys after
-   * the parent entity (e.g. product) has been saved successfully.
    */
   static confirmUploads = asyncHandler(async (req: Request, res: Response) => {
     const { moves } = req.body as {
