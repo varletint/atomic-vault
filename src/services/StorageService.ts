@@ -216,6 +216,28 @@ export class StorageService {
   }
 
   /**
+   * Server-side upload (Buffer/stream) to private bucket.
+   * Useful for generated artifacts like invoices.
+   */
+  public static async putPrivateObject(params: {
+    key: string;
+    body: Buffer;
+    contentType: string;
+  }): Promise<void> {
+    const bucket = process.env.R2_PRIVATE_BUCKET_NAME;
+    if (!bucket) throw new Error("R2_PRIVATE_BUCKET_NAME not defined");
+
+    await this.getClient().send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: params.key,
+        Body: params.body,
+        ContentType: params.contentType,
+      })
+    );
+  }
+
+  /**
    * Build the public CDN URL for an asset in the public bucket.
    */
   public static getPublicUrl(key: string): string {
