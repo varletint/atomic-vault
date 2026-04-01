@@ -10,16 +10,7 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import crypto from "crypto";
 
-/* ─────────────────────────────────────────────
- *  Constants
- * ───────────────────────────────────────────── */
-
-/** Uploaded files land here first; lifecycle rules auto-delete after 24h */
 const TEMP_PREFIX = "temp/";
-
-/* ─────────────────────────────────────────────
- *  Service
- * ───────────────────────────────────────────── */
 
 /**
  * Service to handle object storage via Cloudflare R2 (S3 API).
@@ -33,8 +24,6 @@ const TEMP_PREFIX = "temp/";
  */
 export class StorageService {
   private static s3Client: S3Client;
-
-  /* ── Client ──────────────────────────────── */
 
   public static getClient(): S3Client {
     if (!this.s3Client) {
@@ -59,13 +48,9 @@ export class StorageService {
     return this.s3Client;
   }
 
-  /* ── Pre-signed upload URLs ──────────────── */
-
   /**
    * Generate a pre-signed URL for uploading to the **temp/** prefix
    * in the public bucket. Returns the `uploadUrl` (for PUT), the
-   * `tempKey`, and the final `publicUrl` (CDN) that will be valid
-   * after the object is moved to its permanent location.
    */
   public static async getTempUploadUrl(
     folder: string,
@@ -76,7 +61,9 @@ export class StorageService {
     const bucket = process.env.R2_PUBLIC_BUCKET_NAME;
     if (!bucket) throw new Error("R2_PUBLIC_BUCKET_NAME not defined");
 
-    const ext = fileName.includes(".") ? fileName.substring(fileName.lastIndexOf(".")) : "";
+    const ext = fileName.includes(".")
+      ? fileName.substring(fileName.lastIndexOf("."))
+      : "";
     const uuid = crypto.randomUUID();
     const tempKey = `${TEMP_PREFIX}${uuid}${ext}`;
     const finalKey = `${folder}/${uuid}${ext}`;
@@ -87,13 +74,13 @@ export class StorageService {
       ContentType: contentType,
     });
 
-    const uploadUrl = await getSignedUrl(this.getClient(), command, { expiresIn });
+    const uploadUrl = await getSignedUrl(this.getClient(), command, {
+      expiresIn,
+    });
     const publicUrl = this.getPublicUrl(finalKey);
 
     return { uploadUrl, tempKey, finalKey, publicUrl };
   }
-
-  /* ── Move (copy + delete) ────────────────── */
 
   /**
    * Move an object from one key to another within the same bucket.
@@ -109,7 +96,6 @@ export class StorageService {
 
     const client = this.getClient();
 
-    // Copy
     await client.send(
       new CopyObjectCommand({
         Bucket: bucketName,
@@ -118,7 +104,6 @@ export class StorageService {
       })
     );
 
-    // Delete original
     await client.send(
       new DeleteObjectCommand({
         Bucket: bucketName,
@@ -127,12 +112,13 @@ export class StorageService {
     );
   }
 
-  /* ── Delete ──────────────────────────────── */
-
   /**
    * Delete a single object from a bucket.
    */
-  public static async deleteObject(key: string, bucket?: string): Promise<void> {
+  public static async deleteObject(
+    key: string,
+    bucket?: string
+  ): Promise<void> {
     const bucketName = bucket ?? process.env.R2_PUBLIC_BUCKET_NAME;
     if (!bucketName) throw new Error("Bucket name not defined");
 
@@ -148,7 +134,10 @@ export class StorageService {
    * Delete multiple objects from a bucket in one call.
    * Silently ignores keys that don't exist.
    */
-  public static async deleteObjects(keys: string[], bucket?: string): Promise<void> {
+  public static async deleteObjects(
+    keys: string[],
+    bucket?: string
+  ): Promise<void> {
     if (keys.length === 0) return;
 
     const bucketName = bucket ?? process.env.R2_PUBLIC_BUCKET_NAME;
@@ -165,11 +154,8 @@ export class StorageService {
     );
   }
 
-  /* ── List ────────────────────────────────── */
-
   /**
    * List object keys under a given prefix.
-   * Useful for cleanup jobs.
    */
   public static async listObjects(
     prefix: string,
@@ -190,8 +176,6 @@ export class StorageService {
       lastModified: obj.LastModified,
     }));
   }
-
-  /* ── Private-bucket helpers ──────────────── */
 
   /**
    * Pre-signed upload URL for the private bucket.
@@ -231,19 +215,21 @@ export class StorageService {
     return await getSignedUrl(this.getClient(), command, { expiresIn });
   }
 
-  /* ── Public URL builder ──────────────────── */
-
   /**
    * Build the public CDN URL for an asset in the public bucket.
    */
   public static getPublicUrl(key: string): string {
     const domain = process.env.R2_PUBLIC_DOMAIN;
     if (!domain) {
-      console.warn("R2_PUBLIC_DOMAIN not defined, public URLs will not work correctly.");
+      console.warn(
+        "R2_PUBLIC_DOMAIN not defined, public URLs will not work correctly."
+      );
       return "";
     }
 
-    const normalizedDomain = domain.endsWith("/") ? domain.slice(0, -1) : domain;
+    const normalizedDomain = domain.endsWith("/")
+      ? domain.slice(0, -1)
+      : domain;
     const normalizedKey = key.startsWith("/") ? key.substring(1) : key;
 
     return `${normalizedDomain}/${normalizedKey}`;
