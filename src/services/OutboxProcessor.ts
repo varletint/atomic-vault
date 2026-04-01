@@ -1,0 +1,106 @@
+import crypto from "node:crypto";
+import { OutboxEvent, type IOutboxEvent } from "../models/index.js";
+import { OrderCompletionService } from "./OrderCompletionService.js";
+
+type ProcessOptions = {
+  batchSize?: number;
+  lockTtlMs?: number;
+};
+
+function backoffMs(attempts: number): number {
+  // 1m, 5m, 15m, 1h, 6h
+  const schedule = [60_000, 300_000, 900_000, 3_600_000, 21_600_000];
+  return schedule[Math.min(attempts, schedule.length - 1)]!;
+}
+
+export class OutboxProcessor {
+  static async drainOnce(opts: ProcessOptions = {}): Promise<{
+    processed: number;
+    succeeded: number;
+    failed: number;
+  }> {
+    const batchSize = opts.batchSize ?? 20;
+    const lockTtlMs = opts.lockTtlMs ?? 10 * 60_000;
+
+    let processed = 0;
+    let succeeded = 0;
+    let failed = 0;
+
+    for (let i = 0; i < batchSize; i++) {
+      const event = await this.claimNext(lockTtlMs);
+      if (!event) break;
+
+      processed++;
+      try {
+        await this.handle(event);
+        succeeded++;
+        if (!event.lockId) throw new Error("Outbox lockId missing on success.");
+        await OutboxEvent.updateOne(
+          { _id: event._id, lockId: event.lockId },
+          { $set: { status: "DONE" }, $unset: { lockedAt: 1, lockId: 1 } }
+        );
+      } catch (err) {
+        failed++;
+        if (!event.lockId) throw new Error("Outbox lockId missing on failure.");
+        const attempts = (event.attempts ?? 0) + 1;
+        const nextRunAt = new Date(Date.now() + backoffMs(attempts));
+        await OutboxEvent.updateOne(
+          { _id: event._id, lockId: event.lockId },
+          {
+            $set: {
+              status: attempts >= 5 ? "FAILED" : "PENDING",
+              nextRunAt,
+              lastError: err instanceof Error ? err.message : String(err),
+            },
+            $unset: { lockedAt: 1, lockId: 1 },
+            $inc: { attempts: 1 },
+          }
+        );
+      }
+    }
+
+    return { processed, succeeded, failed };
+  }
+
+  private static async claimNext(lockTtlMs: number): Promise<IOutboxEvent | null> {
+    const now = new Date();
+    const lockExpiry = new Date(Date.now() - lockTtlMs);
+    const lockId = crypto.randomUUID();
+
+    return await OutboxEvent.findOneAndUpdate(
+      {
+        status: "PENDING",
+        nextRunAt: { $lte: now },
+        $or: [{ lockedAt: { $exists: false } }, { lockedAt: { $lte: lockExpiry } }],
+      },
+      {
+        $set: {
+          status: "PROCESSING",
+          lockedAt: now,
+          lockId,
+        },
+      },
+      { sort: { nextRunAt: 1, createdAt: 1 }, new: true }
+    ).lean<IOutboxEvent | null>();
+  }
+
+  private static async handle(event: IOutboxEvent): Promise<void> {
+    if (event.type === "ORDER_COMPLETED") {
+      const payload = event.payload as {
+        orderId?: string;
+        paymentReference?: string;
+      };
+      if (!payload.orderId || !payload.paymentReference) {
+        throw new Error("ORDER_COMPLETED outbox payload missing fields.");
+      }
+      await OrderCompletionService.handleOrderCompleted({
+        orderId: payload.orderId,
+        paymentReference: payload.paymentReference,
+      });
+      return;
+    }
+
+    throw new Error(`Unhandled outbox event type: ${event.type}`);
+  }
+}
+
