@@ -5,6 +5,12 @@ import {
   paystackHeaders,
 } from "../config/paystack.js";
 
+type PaystackApiError = {
+  status?: boolean;
+  message?: string;
+  data?: unknown;
+};
+
 type PaystackInitializeParams = {
   email: string;
   amount: number;
@@ -43,6 +49,57 @@ type PaystackVerifyResponse = {
 };
 
 export class PaystackService {
+  private static async requestJson<T>(
+    path: string,
+    init: RequestInit & { timeoutMs?: number } = {}
+  ): Promise<T> {
+    const controller = new AbortController();
+    const timeoutMs = init.timeoutMs ?? 15_000;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const res = await fetch(`${PAYSTACK_BASE_URL}${path}`, {
+        ...init,
+        headers: {
+          ...paystackHeaders(),
+          ...(init.headers ?? {}),
+        },
+        signal: controller.signal,
+      });
+
+      const text = await res.text();
+      let json: unknown = undefined;
+      if (text) {
+        try {
+          json = JSON.parse(text) as unknown;
+        } catch {
+          // ignore; fall back to status text
+        }
+      }
+
+      if (!res.ok) {
+        const msg =
+          (json as PaystackApiError | undefined)?.message ??
+          res.statusText ??
+          "Paystack request failed";
+        throw new Error(`Paystack HTTP ${res.status}: ${msg}`);
+      }
+
+      if (json === undefined) {
+        throw new Error("Paystack returned an empty response body.");
+      }
+
+      return json as T;
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        throw new Error(`Paystack request timed out after ${timeoutMs}ms.`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   static async initializeTransaction(
     params: PaystackInitializeParams
   ): Promise<PaystackInitializeResponse["data"]> {
@@ -56,17 +113,17 @@ export class PaystackService {
     if (params.callbackUrl) body.callback_url = params.callbackUrl;
     if (params.metadata) body.metadata = params.metadata;
 
-    const res = await fetch(`${PAYSTACK_BASE_URL}/transaction/initialize`, {
-      method: "POST",
-      headers: paystackHeaders(),
-      body: JSON.stringify(body),
-    });
+    const json = await this.requestJson<PaystackInitializeResponse>(
+      "/transaction/initialize",
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      }
+    );
 
-    const json = (await res.json()) as PaystackInitializeResponse;
-
-    if (!res.ok || !json.status) {
+    if (!json.status) {
       throw new Error(
-        `Paystack initialize failed: ${json.message ?? res.statusText}`
+        `Paystack initialize failed: ${json.message ?? "Unknown error"}`
       );
     }
 
@@ -76,18 +133,14 @@ export class PaystackService {
   static async verifyTransaction(
     reference: string
   ): Promise<PaystackVerifyResponse["data"]> {
-    const res = await fetch(
-      `${PAYSTACK_BASE_URL}/transaction/verify/${encodeURIComponent(
-        reference
-      )}`,
-      { method: "GET", headers: paystackHeaders() }
+    const json = await this.requestJson<PaystackVerifyResponse>(
+      `/transaction/verify/${encodeURIComponent(reference)}`,
+      { method: "GET" }
     );
 
-    const json = (await res.json()) as PaystackVerifyResponse;
-
-    if (!res.ok || !json.status) {
+    if (!json.status) {
       throw new Error(
-        `Paystack verify failed: ${json.message ?? res.statusText}`
+        `Paystack verify failed: ${json.message ?? "Unknown error"}`
       );
     }
 
@@ -98,11 +151,21 @@ export class PaystackService {
     rawBody: string | Buffer,
     signatureHeader: string
   ): boolean {
+    if (!PAYSTACK_WEBHOOK_SECRET) return false;
+    if (!signatureHeader) return false;
+
     const hash = crypto
       .createHmac("sha512", PAYSTACK_WEBHOOK_SECRET)
       .update(rawBody)
       .digest("hex");
 
-    return hash === signatureHeader;
+    try {
+      const a = Buffer.from(hash, "utf8");
+      const b = Buffer.from(signatureHeader, "utf8");
+      if (a.length !== b.length) return false;
+      return crypto.timingSafeEqual(a, b);
+    } catch {
+      return false;
+    }
   }
 }
