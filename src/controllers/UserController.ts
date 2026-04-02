@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { UserService } from "../services/UserService.js";
 import { ValidationError } from "../utils/AppError.js";
+import { logger, logAudit } from "../utils/index.js";
 import {
   parseExpirationToMs,
   verifyEmailVerificationToken,
@@ -54,6 +55,13 @@ export class UserController {
     });
 
     setAuthCookies(res, tokens);
+    await logAudit({
+      action: "user.register",
+      req,
+      entity: { type: "User", id: user._id.toString(), name: user.email },
+      metadata: { role: user.role, status: user.status },
+    });
+    logger.info("auth.register.success", { userId: user._id.toString() });
 
     res.status(201).json({
       success: true,
@@ -64,13 +72,21 @@ export class UserController {
 
   static login = asyncHandler(async (req: Request, res: Response) => {
     const { email, password } = req.body as z.infer<typeof loginSchema>;
+    const loginMeta: { ip?: string; userAgent?: string } = {};
+    if (req.ip) loginMeta.ip = req.ip;
+    const ua = req.get("user-agent");
+    if (ua) loginMeta.userAgent = ua;
 
-    const { user, tokens } = await UserService.login(email, password, {
-      ip: req.ip,
-      userAgent: req.get("user-agent") ?? undefined,
-    });
+    const { user, tokens } = await UserService.login(email, password, loginMeta);
 
     setAuthCookies(res, tokens);
+    await logAudit({
+      action: "user.login",
+      req,
+      entity: { type: "User", id: user._id.toString(), name: user.email },
+      metadata: { role: user.role, status: user.status },
+    });
+    logger.info("auth.login.success", { userId: user._id.toString() });
 
     res.status(200).json({
       success: true,
@@ -89,6 +105,12 @@ export class UserController {
     const tokens = await UserService.refreshTokens(refreshToken);
 
     setAuthCookies(res, tokens);
+    await logAudit({
+      action: "token.refresh",
+      req,
+      result: { success: true },
+    });
+    logger.info("auth.refresh.success");
 
     res.status(200).json({
       success: true,
@@ -96,7 +118,18 @@ export class UserController {
     });
   });
 
-  static logout = asyncHandler(async (_req: Request, res: Response) => {
+  static logout = asyncHandler(async (req: Request, res: Response) => {
+    const refreshToken = req.cookies?.refreshToken as string | undefined;
+    if (refreshToken) {
+      await UserService.logoutByRefreshToken(refreshToken);
+    }
+    await logAudit({
+      action: "user.logout",
+      req,
+      result: { success: true },
+    });
+    logger.info("auth.logout.success");
+
     res.clearCookie("accessToken", COOKIE_OPTIONS);
     res.clearCookie("refreshToken", {
       ...COOKIE_OPTIONS,
