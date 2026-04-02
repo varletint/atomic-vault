@@ -32,6 +32,8 @@ export interface JwtPayload {
   role: UserRole;
   /** Present on newly issued tokens; used to invalidate refresh tokens server-side */
   tokenVersion?: number;
+  /** DB-backed auth session identifier for refresh token rotation/revocation */
+  sessionId?: string;
 }
 
 // ─────────────────────────────────────────────────
