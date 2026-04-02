@@ -25,3 +25,5 @@ export { generateSku, parseSku, CATEGORY_PREFIXES } from "./sku.js";
 
 export { generateSlug, generateUniqueSlug, slugify } from "./slug.js";
 export { formatMinorCurrency } from "./currency.js";
+export { logger } from "./logger.js";
+export { logAudit } from "./auditHelper.js";
