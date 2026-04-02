@@ -161,7 +161,10 @@ export class OrderCompletionService {
       typeof metadata?.locale === "string" ? metadata.locale : undefined;
     const currency = tx?.currency;
 
-    return { currency, locale };
+    const ctx: { currency?: string; locale?: string } = {};
+    if (currency) ctx.currency = currency;
+    if (locale) ctx.locale = locale;
+    return ctx;
   }
 }
 
