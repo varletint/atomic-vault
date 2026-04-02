@@ -1,4 +1,4 @@
-import { randomInt } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import {
@@ -12,11 +12,11 @@ import {
   sendVerificationEmail,
 } from "./EmailService.js";
 import {
-  generateAccessToken,
-  generateRefreshToken,
   generateEmailVerificationToken,
   verifyRefreshToken,
 } from "../utils/jwt.js";
+import { SessionService } from "./SessionService.js";
+import { AuthTokenService } from "./AuthTokenService.js";
 import {
   AppError,
   NotFoundError,
@@ -75,31 +75,6 @@ function assertValidTransition(current: UserStatus, next: UserStatus): void {
   if (!allowed.includes(next)) {
     throw FsmError(current, next, allowed);
   }
-}
-
-// ─────────────────────────────────────────────────
-// Token Helper
-// ─────────────────────────────────────────────────
-
-/**
- * Generates an access + refresh token pair for a given user.
- */
-function getTokenVersion(user: IUser): number {
-  return user.auth?.tokenVersion ?? 0;
-}
-
-function issueTokens(user: IUser): AuthTokens {
-  const payload = {
-    userId: user._id.toString(),
-    email: user.email,
-    role: user.role,
-    tokenVersion: getTokenVersion(user),
-  };
-
-  return {
-    accessToken: generateAccessToken(payload),
-    refreshToken: generateRefreshToken(payload),
-  };
 }
 
 /** Max failed password attempts before lockout (env: AUTH_MAX_FAILED_LOGINS, default 5) */
@@ -240,7 +215,16 @@ export class UserService {
         user!.toObject() as IUser & { password?: string };
       void removedPassword;
 
-      const tokens = issueTokens(safeUser as IUser);
+      const sessionId = randomUUID();
+      const tokens = AuthTokenService.issueTokensForSession(
+        safeUser as IUser,
+        sessionId
+      );
+      await SessionService.createWithRefreshToken({
+        userId: user!._id.toString(),
+        refreshToken: tokens.refreshToken,
+        sessionId,
+      });
 
       return { user: safeUser as IUser, tokens };
     } catch (error) {
@@ -336,7 +320,9 @@ export class UserService {
       };
     }
     user.auth.failedLoginAttempts = 0;
-    user.auth.lockedUntil = undefined;
+    if (user.auth.lockedUntil) {
+      delete user.auth.lockedUntil;
+    }
     user.auth.lastLoginAt = now;
     if (meta?.ip) {
       user.auth.lastLoginIp = meta.ip;
@@ -350,7 +336,27 @@ export class UserService {
     const safeUser = user.toObject();
     delete (safeUser as { password?: string }).password;
 
-    const tokens = issueTokens(safeUser as IUser);
+    const sessionId = randomUUID();
+    const tokens = AuthTokenService.issueTokensForSession(
+      safeUser as IUser,
+      sessionId
+    );
+    const createSessionInput: {
+      userId: string;
+      refreshToken: string;
+      sessionId: string;
+      lastUsedAt: Date;
+      ip?: string;
+      userAgent?: string;
+    } = {
+      userId: user._id.toString(),
+      refreshToken: tokens.refreshToken,
+      sessionId,
+      lastUsedAt: now,
+    };
+    if (meta?.ip) createSessionInput.ip = meta.ip;
+    if (meta?.userAgent) createSessionInput.userAgent = meta.userAgent;
+    await SessionService.createWithRefreshToken(createSessionInput);
 
     return { user: safeUser as IUser, tokens };
   }
@@ -515,6 +521,10 @@ export class UserService {
   static async refreshTokens(token: string): Promise<AuthTokens> {
     const decoded = verifyRefreshToken(token);
     const versionInToken = decoded.tokenVersion ?? 0;
+    const sessionId = decoded.sessionId;
+    if (!sessionId) {
+      throw ForbiddenError("Session missing in token. Please sign in again.");
+    }
 
     const user = await User.findById(decoded.userId)
       .select("-password")
@@ -528,12 +538,21 @@ export class UserService {
       throw ForbiddenError("Account is deactivated. Token refresh denied.");
     }
 
-    const currentVersion = getTokenVersion(user);
+    const currentVersion = AuthTokenService.currentTokenVersion(user);
     if (versionInToken !== currentVersion) {
       throw ForbiddenError("Session expired. Please sign in again.");
     }
 
-    return issueTokens(user);
+    return SessionService.rotateRefreshToken({
+      userId: user._id.toString(),
+      sessionId,
+      refreshToken: token,
+      issueTokens: (sid) => AuthTokenService.issueTokensForSession(user, sid),
+    });
+  }
+
+  static async logoutByRefreshToken(token: string): Promise<void> {
+    await SessionService.revokeByRefreshToken(token, "USER_LOGOUT");
   }
 
   // ─────────────────────────────────────────────────
@@ -620,7 +639,16 @@ export class UserService {
       await user.save({ session });
       await session.commitTransaction();
 
-      const tokens = issueTokens(user.toObject() as IUser);
+      const sessionId = randomUUID();
+      const tokens = AuthTokenService.issueTokensForSession(
+        user.toObject() as IUser,
+        sessionId
+      );
+      await SessionService.createWithRefreshToken({
+        userId: user._id.toString(),
+        refreshToken: tokens.refreshToken,
+        sessionId,
+      });
 
       return { user: user.toObject() as IUser, tokens };
     } catch (error) {
