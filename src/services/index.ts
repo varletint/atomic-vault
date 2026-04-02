@@ -10,3 +10,6 @@ export { InventoryService } from "./InventoryService.js";
 export { CartService } from "./CartService.js";
 export { OrderService } from "./OrderService.js";
 export { StorageService } from "./StorageService.js";
+export { SessionService } from "./SessionService.js";
+export { AuthTokenService } from "./AuthTokenService.js";
+export { AuditService } from "./AuditService.js";
