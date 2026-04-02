@@ -53,3 +53,11 @@ export {
   type NotificationType,
 } from "./NotificationLog.js";
 export { OrderDocument, type IOrderDocument, type OrderDocumentType } from "./OrderDocument.js";
+export {
+  AuditLog,
+  type IAuditLog,
+  type AuditAction,
+  type AuditEntityType,
+  type AuditSeverity,
+} from "./AuditLog.js";
+export { Session, type ISession } from "./Session.js";
