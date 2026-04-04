@@ -17,8 +17,8 @@ router.get("/:productId", ProductController.getProductById);
 
 router.post(
   "/",
-  authMiddleware,
-  validate(createProductSchema),
+  // authMiddleware,
+  // validate(createProductSchema),
   ProductController.createProduct
 );
 router.patch(

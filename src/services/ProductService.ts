@@ -15,6 +15,7 @@ import {
   ValidationError,
 } from "../utils/AppError.js";
 import { generateSku } from "../utils/sku.js";
+import { generateSlug } from "../utils/slug.js";
 
 /* ─────────────────────────────────────────────
  *  Public interfaces
@@ -159,11 +160,12 @@ export class ProductService {
 
     try {
       const sku = await generateSku(data.category);
-
+      const slug = await generateSlug(data.name);
       // Build the create payload — only include defined properties
       // to satisfy exactOptionalPropertyTypes strict mode
       const createPayload: Record<string, unknown> = {
         sku,
+        slug,
         name: data.name,
         description: data.description,
         price: data.price,

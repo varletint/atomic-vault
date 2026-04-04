@@ -1,16 +1,6 @@
 import jwt from "jsonwebtoken";
 import type { UserRole } from "../models/User.js";
 
-/**
- * JWT Utility
- *
- * Handles generating and verifying secure tokens for authentication.
- * Uses a dual-token strategy:
- *   - Access Token:  Short-lived (15m), used for API authorization.
- *   - Refresh Token: Long-lived (7d), used to silently re-issue access tokens.
- */
-
-// In production, ALWAYS load these from environment variables.
 const ACCESS_SECRET =
   process.env.JWT_ACCESS_SECRET || "fallback_access_secret_do_not_use";
 const REFRESH_SECRET =
@@ -58,34 +48,14 @@ export const generateRefreshToken = (payload: JwtPayload): string => {
   } as jwt.SignOptions);
 };
 
-// ─────────────────────────────────────────────────
-// Token Verification
-// ─────────────────────────────────────────────────
-
-/**
- * Verifies and decodes a refresh token.
- * Throws if the token is expired or invalid.
- */
 export const verifyRefreshToken = (token: string): JwtPayload => {
   return jwt.verify(token, REFRESH_SECRET) as JwtPayload;
 };
 
-/**
- * Verifies and decodes an access token.
- * Throws if the token is expired or invalid.
- */
 export const verifyAccessToken = (token: string): JwtPayload => {
   return jwt.verify(token, ACCESS_SECRET) as JwtPayload;
 };
 
-// ─────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────
-
-/**
- * Converts a JWT expiration string (e.g. "7d", "15m", "1h") to milliseconds.
- * Useful for setting cookie `maxAge`.
- */
 export const parseExpirationToMs = (expiry: string): number => {
   const match = expiry.match(/^(\d+)([smhd])$/);
   if (!match) {
