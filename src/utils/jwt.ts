@@ -12,36 +12,20 @@ const ACCESS_EXPIRES_IN = process.env.JWT_ACCESS_EXPIRES_IN || "15m";
 const REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || "7d";
 const EMAIL_VERIFY_EXPIRES_IN = process.env.EMAIL_VERIFY_EXPIRES_IN || "24h";
 
-// ─────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────
-
 export interface JwtPayload {
   userId: string;
   email: string;
   role: UserRole;
-  /** Present on newly issued tokens; used to invalidate refresh tokens server-side */
   tokenVersion?: number;
-  /** DB-backed auth session identifier for refresh token rotation/revocation */
   sessionId?: string;
 }
 
-// ─────────────────────────────────────────────────
-// Token Generation
-// ─────────────────────────────────────────────────
-
-/**
- * Generates a short-lived access token.
- */
 export const generateAccessToken = (payload: JwtPayload): string => {
   return jwt.sign(payload, ACCESS_SECRET, {
     expiresIn: ACCESS_EXPIRES_IN,
   } as jwt.SignOptions);
 };
 
-/**
- * Generates a long-lived refresh token.
- */
 export const generateRefreshToken = (payload: JwtPayload): string => {
   return jwt.sign(payload, REFRESH_SECRET, {
     expiresIn: REFRESH_EXPIRES_IN,
@@ -75,35 +59,21 @@ export const parseExpirationToMs = (expiry: string): number => {
   return value * multipliers[unit]!;
 };
 
-/**
- * Returns the configured expiration strings for use in cookie settings.
- */
 export const getExpirationConfig = () => ({
   accessExpiresIn: ACCESS_EXPIRES_IN,
   refreshExpiresIn: REFRESH_EXPIRES_IN,
 });
 
-// ─────────────────────────────────────────────────
-// Email Verification Tokens
-// ─────────────────────────────────────────────────
-
 export interface EmailVerifyPayload {
   userId: string;
 }
 
-/**
- * Generates a short-lived token used in email verification links.
- */
 export const generateEmailVerificationToken = (userId: string): string => {
   return jwt.sign({ userId } as EmailVerifyPayload, EMAIL_VERIFY_SECRET, {
     expiresIn: EMAIL_VERIFY_EXPIRES_IN,
   } as jwt.SignOptions);
 };
 
-/**
- * Verifies and decodes an email verification token.
- * Throws if the token is expired, tampered, or invalid.
- */
 export const verifyEmailVerificationToken = (
   token: string
 ): EmailVerifyPayload => {
