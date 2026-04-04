@@ -17,10 +17,6 @@ import {
 import { generateSku } from "../utils/sku.js";
 import { generateSlug } from "../utils/slug.js";
 
-/* ─────────────────────────────────────────────
- *  Public interfaces
- * ───────────────────────────────────────────── */
-
 export interface ProductWithStock {
   _id: IProduct["_id"];
   sku: string;
@@ -79,10 +75,6 @@ export interface ProductFilters {
   sortBy?: "price" | "name" | "createdAt" | "avgRating" | undefined;
   sortOrder?: "asc" | "desc" | undefined;
 }
-
-/* ─────────────────────────────────────────────
- *  Input types for create / update
- * ───────────────────────────────────────────── */
 
 interface CreateVariantInput {
   variantOptions: { name: string; value: string }[];
@@ -150,8 +142,6 @@ export interface UpdateProductInput {
  * ───────────────────────────────────────────── */
 
 export class ProductService {
-  /* ── Create ──────────────────────────────── */
-
   static async createProduct(
     data: CreateProductInput
   ): Promise<ProductWithStock> {
@@ -160,9 +150,8 @@ export class ProductService {
 
     try {
       const sku = await generateSku(data.category);
-      const slug = await generateSlug(data.name);
-      // Build the create payload — only include defined properties
-      // to satisfy exactOptionalPropertyTypes strict mode
+      const slug = generateSlug(data.name);
+
       const createPayload: Record<string, unknown> = {
         sku,
         slug,
@@ -182,7 +171,6 @@ export class ProductService {
         isActive: true,
       };
 
-      // Conditionally add optional properties only if defined
       if (data.shortDescription !== undefined)
         createPayload.shortDescription = data.shortDescription;
       if (data.compareAtPrice !== undefined)
@@ -203,7 +191,6 @@ export class ProductService {
 
       const initialStock = data.initialStock ?? 0;
 
-      // If product has variants, create inventory per variant
       if (created.hasVariants && created.variants.length > 0) {
         const inventoryDocs = created.variants.map((v: IProductVariant) => ({
           product: created._id,
@@ -214,7 +201,6 @@ export class ProductService {
 
         await Inventory.create(inventoryDocs as any, { session });
       } else {
-        // Single product-level inventory entry
         await Inventory.create(
           [{ product: created._id, stock: initialStock, reserved: 0 }] as any,
           { session }
@@ -223,7 +209,6 @@ export class ProductService {
 
       await session.commitTransaction();
 
-      // Fetch aggregated stock for the response
       const aggregated = await ProductService.getAggregatedStock(created._id);
 
       return ProductService.mergeProductWithStock(
