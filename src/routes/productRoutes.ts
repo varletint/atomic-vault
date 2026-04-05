@@ -12,13 +12,14 @@ const router = Router();
 router.get("/categories", ProductController.getCategories);
 router.get("/brands", ProductController.getBrands);
 router.get("/sku/:sku", ProductController.getProductBySku);
+router.get("/slug/:slug", ProductController.getProductBySlug);
 router.get("/", ProductController.getProducts);
 router.get("/:productId", ProductController.getProductById);
 
 router.post(
   "/",
-  // authMiddleware,
-  // validate(createProductSchema),
+  authMiddleware,
+  validate(createProductSchema),
   ProductController.createProduct
 );
 router.patch(
