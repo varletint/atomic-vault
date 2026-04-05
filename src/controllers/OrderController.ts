@@ -87,6 +87,76 @@ export class OrderController {
     res.status(200).json({ success: true, data: result });
   });
 
+  /* ── Admin: list ALL orders (paginated + filterable) ── */
+
+  static getAllOrders = asyncHandler(async (req: Request, res: Response) => {
+    const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
+    const limit = Math.min(
+      100,
+      Math.max(1, parseInt(req.query.limit as string, 10) || 20)
+    );
+    const status = (req.query.status as string) || undefined;
+    const search = (req.query.search as string) || undefined;
+
+    const result = await OrderService.getAllOrders(
+      page,
+      limit,
+      status as import("../models/Order.js").OrderStatus | undefined,
+      search
+    );
+    res.status(200).json({ success: true, data: result });
+  });
+
+  /* ── Admin: unified status update ── */
+
+  static updateOrderStatus = asyncHandler(
+    async (req: Request, res: Response) => {
+      const { orderId } = req.params as { orderId: string };
+      const { status, note, reason } = req.body as {
+        status: string;
+        note?: string;
+        reason?: string;
+      };
+
+      if (!status) {
+        throw ValidationError("Status is required.");
+      }
+
+      let order;
+      switch (status) {
+        case "CONFIRMED":
+          order = await OrderService.confirmOrder(orderId);
+          break;
+        case "SHIPPED":
+          order = await OrderService.shipOrder(orderId, note);
+          break;
+        case "DELIVERED":
+          order = await OrderService.deliverOrder(orderId);
+          break;
+        case "CANCELLED":
+          order = await OrderService.cancelOrder(
+            orderId,
+            reason || note || "Cancelled by admin"
+          );
+          break;
+        case "FAILED":
+          order = await OrderService.failOrder(
+            orderId,
+            reason || note || "Marked failed by admin"
+          );
+          break;
+        default:
+          throw ValidationError(`Invalid target status: ${status}`);
+      }
+
+      res.status(200).json({
+        success: true,
+        message: `Order marked as ${status}.`,
+        data: order,
+      });
+    }
+  );
+
   static confirmOrder = asyncHandler(async (req: Request, res: Response) => {
     const { orderId } = req.params as { orderId: string };
     const order = await OrderService.confirmOrder(orderId);

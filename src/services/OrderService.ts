@@ -352,6 +352,52 @@ export class OrderService {
     };
   }
 
+  /**
+   * Admin: list ALL orders with optional status / search filters.
+   */
+  static async getAllOrders(
+    page = 1,
+    limit = 20,
+    status?: OrderStatus,
+    search?: string
+  ): Promise<{
+    orders: IOrder[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const skip = (page - 1) * limit;
+
+    const filter: Record<string, unknown> = {};
+    if (status) filter.status = status;
+    if (search) {
+      filter.$or = [
+        { _id: { $regex: search, $options: "i" } },
+        { "items.productName": { $regex: search, $options: "i" } },
+        { "guestContact.email": { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const [orders, total] = await Promise.all([
+      Order.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate("user", "name email")
+        .lean<IOrder[]>(),
+      Order.countDocuments(filter),
+    ]);
+
+    return {
+      orders,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
   /** Public order lookup for guest orders — email must match stored guestContact. */
   static async getGuestOrderById(
     orderId: string,
@@ -774,7 +820,9 @@ export class OrderService {
     };
     if (location) eventData.location = location;
 
-    const event = (await TrackingEvent.create(eventData)) as unknown as ITrackingEvent;
+    const event = (await TrackingEvent.create(
+      eventData
+    )) as unknown as ITrackingEvent;
 
     // Optionally update the high-level order status if it differs
     // and make sure it's a valid transition to prevent breaking the state machine.

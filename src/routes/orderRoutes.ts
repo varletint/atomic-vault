@@ -21,6 +21,21 @@ router.post(
 );
 router.get("/guest/:orderId", OrderController.getGuestOrder);
 
+/* ── Admin-only routes ── */
+router.get(
+  "/admin",
+  authMiddleware,
+  requireRole("ADMIN", "SUPERADMIN"),
+  OrderController.getAllOrders
+);
+
+router.patch(
+  "/:orderId/status",
+  authMiddleware,
+  requireRole("ADMIN", "SUPERADMIN"),
+  OrderController.updateOrderStatus
+);
+
 router.use(authMiddleware);
 
 router.post("/", validate(createOrderSchema), OrderController.createOrder);
