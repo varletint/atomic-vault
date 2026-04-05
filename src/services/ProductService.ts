@@ -337,6 +337,16 @@ export class ProductService {
     return ProductService.mergeProductWithStock(product, aggregated);
   }
 
+  static async getProductBySlug(
+    slug: string
+  ): Promise<ProductWithStock | null> {
+    const product = await Product.findOne({ slug }).lean<IProduct>();
+    if (!product) return null;
+
+    const aggregated = await ProductService.getAggregatedStock(product._id);
+    return ProductService.mergeProductWithStock(product, aggregated);
+  }
+
   static async getProducts(
     filters: ProductFilters = {}
   ): Promise<PaginatedResult<ProductWithStock>> {
