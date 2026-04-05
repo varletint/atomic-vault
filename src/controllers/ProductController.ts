@@ -81,6 +81,15 @@ export class ProductController {
     res.status(200).json({ success: true, data: product });
   });
 
+  static getProductBySlug = asyncHandler(
+    async (req: Request, res: Response) => {
+      const { slug } = req.params as { slug: string };
+      const product = await ProductService.getProductBySlug(slug);
+      if (!product) throw NotFoundError("Product");
+      res.status(200).json({ success: true, data: product });
+    }
+  );
+
   static getProducts = asyncHandler(async (req: Request, res: Response) => {
     const query = req.query as Record<string, string | undefined>;
 
