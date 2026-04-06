@@ -3,7 +3,7 @@ import express, { type Request, type Response } from "express";
 import mongoose from "mongoose";
 import cookieParser from "cookie-parser";
 import cors from "cors";
-import { corsOptions, devCorsOptions } from "./config/cors.js";
+import { corsConfig } from "./config/cors.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { OrderController } from "./controllers/OrderController.js";
 
@@ -22,12 +22,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI =
   process.env.MONGODB_URI || "mongodb://localhost:27017/order-system";
-const isDevelopment = process.env.NODE_ENV !== "production";
 
-// CORS — handle preflight OPTIONS for all routes, then apply to all requests
-const activeCorsOptions = isDevelopment ? devCorsOptions : corsOptions;
-// app.options("*", cors(activeCorsOptions));
-app.use(cors(activeCorsOptions));
+app.use(cors(corsConfig));
 
 app.post(
   "/api/orders/webhook/paystack",
@@ -114,7 +110,7 @@ if (process.env.NODE_ENV !== "production") {
         console.log(` Environment: ${process.env.NODE_ENV || "development"}`);
         console.log(
           ` CORS: ${
-            isDevelopment
+            process.env.NODE_ENV !== "production"
               ? "Development (all origins)"
               : "Production (restricted)"
           }`
