@@ -25,6 +25,7 @@ const MONGODB_URI =
 const isDevelopment = process.env.NODE_ENV !== "production";
 
 app.use(isDevelopment ? cors(devCorsOptions) : cors(corsOptions));
+app.options("*", cors(isDevelopment ? devCorsOptions : corsOptions));
 
 app.post(
   "/api/orders/webhook/paystack",
