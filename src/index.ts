@@ -24,15 +24,10 @@ const MONGODB_URI =
   process.env.MONGODB_URI || "mongodb://localhost:27017/order-system";
 const isDevelopment = process.env.NODE_ENV !== "production";
 
-app.use((req, res, next) => {
-  console.log("Origin:", req.headers.origin);
-  console.log("NODE_ENV:", process.env.NODE_ENV);
-  console.log("ALLOWED_ORIGINS env:", process.env.ALLOWED_ORIGINS);
-  next();
-});
-
-app.use(isDevelopment ? cors(devCorsOptions) : cors(corsOptions));
-// app.options("*", cors(isDevelopment ? devCorsOptions : corsOptions));
+// CORS — handle preflight OPTIONS for all routes, then apply to all requests
+const activeCorsOptions = isDevelopment ? devCorsOptions : corsOptions;
+app.options("*", cors(activeCorsOptions));
+app.use(cors(activeCorsOptions));
 
 app.post(
   "/api/orders/webhook/paystack",
