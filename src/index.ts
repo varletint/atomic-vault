@@ -26,7 +26,7 @@ const isDevelopment = process.env.NODE_ENV !== "production";
 
 // CORS — handle preflight OPTIONS for all routes, then apply to all requests
 const activeCorsOptions = isDevelopment ? devCorsOptions : corsOptions;
-app.options("*", cors(activeCorsOptions));
+// app.options("*", cors(activeCorsOptions));
 app.use(cors(activeCorsOptions));
 
 app.post(
