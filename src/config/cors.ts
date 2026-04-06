@@ -3,7 +3,7 @@ import type { CorsOptions } from "cors";
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim())
   : [
-      // Production
+      // production
       "https://adminvault.vercel.app",
       "https://atomic-oder.vercel.app",
       // Local dev
