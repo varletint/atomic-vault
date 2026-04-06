@@ -25,14 +25,14 @@ router.get("/guest/:orderId", OrderController.getGuestOrder);
 router.get(
   "/admin",
   authMiddleware,
-  requireRole("ADMIN", "SUPERADMIN"),
+  requireRole("ADMIN"),
   OrderController.getAllOrders
 );
 
 router.patch(
   "/:orderId/status",
   authMiddleware,
-  requireRole("ADMIN", "SUPERADMIN"),
+  requireRole("ADMIN"),
   OrderController.updateOrderStatus
 );
 
@@ -68,7 +68,7 @@ router.get(
 router.get("/:orderId/tracking", OrderController.getTrackingEvents);
 router.post(
   "/:orderId/tracking",
-  requireRole(["ADMIN", "SUPERADMIN"]),
+  requireRole("ADMIN"),
   validate(addTrackingEventSchema),
   OrderController.addTrackingEvent
 );
