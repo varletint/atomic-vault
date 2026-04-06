@@ -26,8 +26,6 @@ const isDevelopment = process.env.NODE_ENV !== "production";
 
 app.use(isDevelopment ? cors(devCorsOptions) : cors(corsOptions));
 
-// Paystack requires the raw request body for webhook signature verification.
-// This MUST be mounted before `express.json()`.
 app.post(
   "/api/orders/webhook/paystack",
   express.raw({ type: "application/json" }),
