@@ -42,7 +42,7 @@ export const createGuestOrderSchema = z.object({
 
 export const processPaymentSchema = z.object({
   paymentMethod: z.enum(paymentMethods, {
-    invalid_type_error: "Invalid payment method",
+    error: "Invalid payment method",
   }),
   provider: z.string().min(1, "Provider is required"),
   idempotencyKey: z.string().min(1, "Idempotency key is required"),
