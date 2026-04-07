@@ -3,7 +3,7 @@ import express, { type Request, type Response } from "express";
 import mongoose from "mongoose";
 import cookieParser from "cookie-parser";
 import cors from "cors";
-import { corsConfig } from "./config/cors.js";
+import { corsOptions, devCorsOptions } from "./config/cors.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { OrderController } from "./controllers/OrderController.js";
 
@@ -23,7 +23,9 @@ const PORT = process.env.PORT || 3000;
 const MONGODB_URI =
   process.env.MONGODB_URI || "mongodb://localhost:27017/order-system";
 
-app.use(cors(corsConfig));
+const isDevelopment = process.env.NODE_ENV !== "production";
+
+app.use(isDevelopment ? cors(devCorsOptions) : cors(corsOptions));
 
 app.post(
   "/api/orders/webhook/paystack",
