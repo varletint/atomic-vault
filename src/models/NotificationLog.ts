@@ -1,7 +1,7 @@
 import mongoose, { Schema, type Document, type Types } from "mongoose";
 
 export type NotificationChannel = "EMAIL";
-export type NotificationType = "ORDER_COMPLETED";
+export type NotificationType = "ORDER_CONFIRMED" | "ORDER_DELIVERED";
 export type NotificationStatus = "SENT" | "FAILED";
 
 export interface INotificationLog extends Document {
@@ -29,7 +29,7 @@ const notificationLogSchema = new Schema<INotificationLog>(
     },
     type: {
       type: String,
-      enum: ["ORDER_COMPLETED"],
+      enum: ["ORDER_CONFIRMED", "ORDER_DELIVERED"],
       required: true,
       index: true,
     },
@@ -57,4 +57,3 @@ export const NotificationLog = mongoose.model<INotificationLog>(
   "NotificationLog",
   notificationLogSchema
 );
-
