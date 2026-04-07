@@ -449,12 +449,24 @@ export class OrderService {
       await order.save({ session });
       await session.commitTransaction();
 
-      // Enqueue delivery email (fire-and-forget, outside the txn)
+      // Enqueue relevant emails (fire-and-forget, outside the txn)
       if (nextStatus === "DELIVERED") {
         await OutboxService.enqueue({
           type: "ORDER_DELIVERED",
           dedupeKey: `order:${orderId}:delivered`,
           payload: { orderId },
+        });
+      } else if (nextStatus === "CONFIRMED") {
+        await OutboxService.enqueue({
+          type: "ORDER_CONFIRMED",
+          dedupeKey: `order:${orderId}:confirmed`,
+          payload: { orderId },
+        });
+      } else if (nextStatus === "SHIPPED") {
+        await OutboxService.enqueue({
+          type: "ORDER_SHIPPED",
+          dedupeKey: `order:${orderId}:shipped`,
+          payload: { orderId, note },
         });
       }
 
@@ -511,6 +523,26 @@ export class OrderService {
         timestamp: new Date(),
         note: reason,
       });
+
+      await TrackingEvent.create(
+        [
+          {
+            orderId: order._id,
+            status: "CANCELLED",
+            description: reason,
+          },
+        ],
+        { session }
+      );
+
+      await OutboxService.enqueue(
+        {
+          type: "ORDER_CANCELLED",
+          dedupeKey: `order:${orderId}:cancelled`,
+          payload: { orderId, reason },
+        },
+        session
+      );
 
       await order.save({ session });
       await session.commitTransaction();

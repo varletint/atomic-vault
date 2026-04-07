@@ -93,11 +93,13 @@ export class OutboxProcessor {
     const payload = event.payload as {
       orderId?: string;
       paymentReference?: string;
+      note?: string;
+      reason?: string;
     };
 
     if (event.type === "ORDER_CONFIRMED") {
-      if (!payload.orderId || !payload.paymentReference) {
-        throw new Error("ORDER_CONFIRMED outbox payload missing fields.");
+      if (!payload.orderId) {
+        throw new Error("ORDER_CONFIRMED outbox payload missing orderId.");
       }
       await OrderNotificationService.handleOrderConfirmed({
         orderId: payload.orderId,
@@ -112,6 +114,28 @@ export class OutboxProcessor {
       }
       await OrderNotificationService.handleOrderDelivered({
         orderId: payload.orderId,
+      });
+      return;
+    }
+
+    if (event.type === "ORDER_SHIPPED") {
+      if (!payload.orderId) {
+        throw new Error("ORDER_SHIPPED outbox payload missing orderId.");
+      }
+      await OrderNotificationService.handleOrderShipped({
+        orderId: payload.orderId,
+        note: payload.note,
+      });
+      return;
+    }
+
+    if (event.type === "ORDER_CANCELLED") {
+      if (!payload.orderId) {
+        throw new Error("ORDER_CANCELLED outbox payload missing orderId.");
+      }
+      await OrderNotificationService.handleOrderCancelled({
+        orderId: payload.orderId,
+        reason: payload.reason,
       });
       return;
     }

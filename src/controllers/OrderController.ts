@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { OrderService } from "../services/OrderService.js";
+import { OutboxProcessor } from "../services/OutboxProcessor.js";
 import { ValidationError } from "../utils/AppError.js";
 import { PaystackService } from "../services/PaystackService.js";
 import type { z } from "zod";
@@ -148,6 +149,11 @@ export class OrderController {
         default:
           throw ValidationError(`Invalid target status: ${status}`);
       }
+
+      // Immediately attempt to drain outbox matching the new flow for instant asynchronous delivery
+      OutboxProcessor.drainOnce().catch((err) =>
+        console.error("Instant outbox drain failed:", err)
+      );
 
       res.status(200).json({
         success: true,

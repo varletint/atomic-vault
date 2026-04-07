@@ -11,6 +11,8 @@ import { OrderCompletionService } from "./OrderCompletionService.js";
 import { buildOrderEmailData } from "./templates/emailLayout.js";
 import { renderOrderCompletedEmail } from "./templates/orderCompletedEmail.js";
 import { renderOrderDeliveredEmail } from "./templates/orderDeliveredEmail.js";
+import { renderOrderShippedEmail } from "./templates/orderShippedEmail.js";
+import { renderOrderCancelledEmail } from "./templates/orderCancelledEmail.js";
 
 /**
  * Sends transactional emails for order lifecycle events.
@@ -23,7 +25,7 @@ export class OrderNotificationService {
    */
   static async handleOrderConfirmed(payload: {
     orderId: string;
-    paymentReference: string;
+    paymentReference?: string;
   }): Promise<void> {
     const order = await Order.findById(payload.orderId).lean<IOrder | null>();
     if (!order) throw NotFoundError("Order");
@@ -63,6 +65,50 @@ export class OrderNotificationService {
     await this.sendAndLog({
       orderId: order._id.toString(),
       type: "ORDER_DELIVERED",
+      to: customerEmail,
+      email,
+    });
+  }
+
+  /**
+   * Handles ORDER_SHIPPED: sends the shipped notification email.
+   */
+  static async handleOrderShipped(payload: {
+    orderId: string;
+    note?: string;
+  }): Promise<void> {
+    const order = await Order.findById(payload.orderId).lean<IOrder | null>();
+    if (!order) throw NotFoundError("Order");
+
+    const customerEmail = await this.resolveCustomerEmail(order);
+    const emailData = buildOrderEmailData(order);
+    const email = renderOrderShippedEmail(emailData, payload.note);
+
+    await this.sendAndLog({
+      orderId: order._id.toString(),
+      type: "ORDER_SHIPPED" as any,
+      to: customerEmail,
+      email,
+    });
+  }
+
+  /**
+   * Handles ORDER_CANCELLED: sends the cancelled order email.
+   */
+  static async handleOrderCancelled(payload: {
+    orderId: string;
+    reason?: string;
+  }): Promise<void> {
+    const order = await Order.findById(payload.orderId).lean<IOrder | null>();
+    if (!order) throw NotFoundError("Order");
+
+    const customerEmail = await this.resolveCustomerEmail(order);
+    const emailData = buildOrderEmailData(order);
+    const email = renderOrderCancelledEmail(emailData, payload.reason);
+
+    await this.sendAndLog({
+      orderId: order._id.toString(),
+      type: "ORDER_CANCELLED" as any,
       to: customerEmail,
       email,
     });

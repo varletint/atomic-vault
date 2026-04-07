@@ -2,7 +2,11 @@ import mongoose, { Schema, type Document, type Types } from "mongoose";
 
 export type OutboxStatus = "PENDING" | "PROCESSING" | "DONE" | "FAILED";
 
-export type OutboxEventType = "ORDER_CONFIRMED" | "ORDER_DELIVERED";
+export type OutboxEventType =
+  | "ORDER_CONFIRMED"
+  | "ORDER_DELIVERED"
+  | "ORDER_SHIPPED"
+  | "ORDER_CANCELLED";
 
 export interface IOutboxEvent extends Document {
   _id: Types.ObjectId;
@@ -23,7 +27,12 @@ const outboxEventSchema = new Schema<IOutboxEvent>(
   {
     type: {
       type: String,
-      enum: ["ORDER_CONFIRMED", "ORDER_DELIVERED"],
+      enum: [
+        "ORDER_CONFIRMED",
+        "ORDER_DELIVERED",
+        "ORDER_SHIPPED",
+        "ORDER_CANCELLED",
+      ],
       required: true,
       index: true,
     },

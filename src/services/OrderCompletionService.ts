@@ -16,7 +16,7 @@ import { StorageService } from "./StorageService.js";
 export class OrderCompletionService {
   static async handleOrderCompleted(payload: {
     orderId: string;
-    paymentReference: string;
+    paymentReference?: string;
   }): Promise<{ invoiceUrl: string }> {
     const order = await Order.findById(payload.orderId).lean<IOrder | null>();
     if (!order) throw NotFoundError("Order");
@@ -92,8 +92,10 @@ export class OrderCompletionService {
 
   private static async resolveCurrencyContext(
     orderId: string,
-    paymentReference: string
+    paymentReference?: string
   ): Promise<{ currency?: string; locale?: string }> {
+    if (!paymentReference) return {};
+
     const tx = await Transaction.findOne({
       order: orderId,
       idempotencyKey: paymentReference,
