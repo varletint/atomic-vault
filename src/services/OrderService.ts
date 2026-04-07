@@ -189,13 +189,6 @@ export class OrderService {
     }
   }
 
-  /**
-   * Guest checkout: no user account. Line items are sent in the request (no cart).
-   * Rules:
-   * - Sum of item subtotals ≤ ORDER_GUEST_MAX_ITEMS_TOTAL_NGN (excludes deliveryFee).
-   * - shippingAddress + guestContact (email, phone) required.
-   * - Payment must be instant (see GUEST_INSTANT_PAYMENT_METHODS) via processPayment.
-   */
   static async createGuestOrder(params: {
     idempotencyKey: string;
     shippingAddress: IOrder["shippingAddress"];
@@ -455,6 +448,16 @@ export class OrderService {
 
       await order.save({ session });
       await session.commitTransaction();
+
+      // Enqueue delivery email (fire-and-forget, outside the txn)
+      if (nextStatus === "DELIVERED") {
+        await OutboxService.enqueue({
+          type: "ORDER_DELIVERED",
+          dedupeKey: `order:${orderId}:delivered`,
+          payload: { orderId },
+        });
+      }
+
       return order.toObject() as IOrder;
     } catch (error) {
       await session.abortTransaction();
@@ -731,8 +734,8 @@ export class OrderService {
 
         await OutboxService.enqueue(
           {
-            type: "ORDER_COMPLETED",
-            dedupeKey: `order:${order._id.toString()}:completed`,
+            type: "ORDER_CONFIRMED",
+            dedupeKey: `order:${order._id.toString()}:confirmed`,
             payload: {
               orderId: order._id.toString(),
               transactionId: transaction._id.toString(),
