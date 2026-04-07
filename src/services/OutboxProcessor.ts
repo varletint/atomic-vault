@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { OutboxEvent, type IOutboxEvent } from "../models/index.js";
-import { OrderCompletionService } from "./OrderCompletionService.js";
+import { OrderNotificationService } from "./OrderNotificationService.js";
 
 type ProcessOptions = {
   batchSize?: number;
@@ -62,7 +62,9 @@ export class OutboxProcessor {
     return { processed, succeeded, failed };
   }
 
-  private static async claimNext(lockTtlMs: number): Promise<IOutboxEvent | null> {
+  private static async claimNext(
+    lockTtlMs: number
+  ): Promise<IOutboxEvent | null> {
     const now = new Date();
     const lockExpiry = new Date(Date.now() - lockTtlMs);
     const lockId = crypto.randomUUID();
@@ -71,7 +73,10 @@ export class OutboxProcessor {
       {
         status: "PENDING",
         nextRunAt: { $lte: now },
-        $or: [{ lockedAt: { $exists: false } }, { lockedAt: { $lte: lockExpiry } }],
+        $or: [
+          { lockedAt: { $exists: false } },
+          { lockedAt: { $lte: lockExpiry } },
+        ],
       },
       {
         $set: {
@@ -85,17 +90,28 @@ export class OutboxProcessor {
   }
 
   private static async handle(event: IOutboxEvent): Promise<void> {
-    if (event.type === "ORDER_COMPLETED") {
-      const payload = event.payload as {
-        orderId?: string;
-        paymentReference?: string;
-      };
+    const payload = event.payload as {
+      orderId?: string;
+      paymentReference?: string;
+    };
+
+    if (event.type === "ORDER_CONFIRMED") {
       if (!payload.orderId || !payload.paymentReference) {
-        throw new Error("ORDER_COMPLETED outbox payload missing fields.");
+        throw new Error("ORDER_CONFIRMED outbox payload missing fields.");
       }
-      await OrderCompletionService.handleOrderCompleted({
+      await OrderNotificationService.handleOrderConfirmed({
         orderId: payload.orderId,
         paymentReference: payload.paymentReference,
+      });
+      return;
+    }
+
+    if (event.type === "ORDER_DELIVERED") {
+      if (!payload.orderId) {
+        throw new Error("ORDER_DELIVERED outbox payload missing orderId.");
+      }
+      await OrderNotificationService.handleOrderDelivered({
+        orderId: payload.orderId,
       });
       return;
     }
@@ -103,4 +119,3 @@ export class OutboxProcessor {
     throw new Error(`Unhandled outbox event type: ${event.type}`);
   }
 }
-
