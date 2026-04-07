@@ -1,31 +1,30 @@
 import mongoose from "mongoose";
 import {
-  NotificationLog,
-  Order,
   OrderDocument,
+  Order,
   Transaction,
-  User,
   type IOrder,
 } from "../models/index.js";
 import { NotFoundError } from "../utils/AppError.js";
 import { PdfService } from "./PdfService.js";
 import { StorageService } from "./StorageService.js";
-import { EmailService } from "./EmailService.js";
-import { renderOrderCompletedEmail } from "./templates/orderCompletedEmail.js";
 
+/**
+ * Handles post-payment invoice generation for confirmed orders.
+ * Email sending is handled by OrderNotificationService.
+ */
 export class OrderCompletionService {
   static async handleOrderCompleted(payload: {
     orderId: string;
     paymentReference: string;
-  }): Promise<void> {
+  }): Promise<{ invoiceUrl: string }> {
     const order = await Order.findById(payload.orderId).lean<IOrder | null>();
     if (!order) throw NotFoundError("Order");
+
     const currencyContext = await this.resolveCurrencyContext(
       order._id.toString(),
       payload.paymentReference
     );
-
-    const customerEmail = await this.resolveCustomerEmail(order);
 
     const invoiceDoc = await this.ensureInvoicePdf(order, currencyContext);
     const invoiceUrl = await StorageService.getPrivateReadUrl(
@@ -33,48 +32,7 @@ export class OrderCompletionService {
       60 * 60 * 24 * 7
     );
 
-    const email = renderOrderCompletedEmail({
-      orderId: order._id.toString(),
-      orderStatus: order.status,
-      invoiceUrl,
-    });
-
-    const attempt = await NotificationLog.countDocuments({
-      orderId: order._id,
-      type: "ORDER_COMPLETED",
-      channel: "EMAIL",
-    }).then((n) => n + 1);
-
-    try {
-      const sent = await EmailService.sendEmail({
-        to: customerEmail,
-        subject: email.subject,
-        html: email.html,
-        text: email.text,
-      });
-
-      await NotificationLog.create({
-        orderId: order._id,
-        type: "ORDER_COMPLETED",
-        channel: "EMAIL",
-        to: customerEmail,
-        status: "SENT",
-        provider: sent.provider,
-        providerMessageId: sent.messageId,
-        attempt,
-      });
-    } catch (err) {
-      await NotificationLog.create({
-        orderId: order._id,
-        type: "ORDER_COMPLETED",
-        channel: "EMAIL",
-        to: customerEmail,
-        status: "FAILED",
-        attempt,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      throw err;
-    }
+    return { invoiceUrl };
   }
 
   private static async ensureInvoicePdf(
@@ -132,19 +90,6 @@ export class OrderCompletionService {
     }
   }
 
-  private static async resolveCustomerEmail(order: IOrder): Promise<string> {
-    if (order.guestContact?.email) return order.guestContact.email;
-
-    if (order.user) {
-      const user = await User.findById(order.user)
-        .select("email")
-        .lean<{ email?: string } | null>();
-      if (user?.email) return user.email;
-    }
-
-    throw new Error("Cannot resolve customer email for completed order.");
-  }
-
   private static async resolveCurrencyContext(
     orderId: string,
     paymentReference: string
@@ -167,4 +112,3 @@ export class OrderCompletionService {
     return ctx;
   }
 }
-
