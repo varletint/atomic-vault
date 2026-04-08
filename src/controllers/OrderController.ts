@@ -150,7 +150,6 @@ export class OrderController {
           throw ValidationError(`Invalid target status: ${status}`);
       }
 
-      // Immediately attempt to drain outbox matching the new flow for instant asynchronous delivery
       OutboxProcessor.drainOnce().catch((err) =>
         console.error("Instant outbox drain failed:", err)
       );

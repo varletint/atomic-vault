@@ -1,9 +1,5 @@
 import { z } from "zod";
 
-/* ─────────────────────────────────────────────
- *  Reusable sub-schemas
- * ───────────────────────────────────────────── */
-
 const productImageSchema = z.object({
   url: z.string().url("Invalid image URL"),
   altText: z.string().optional(),
@@ -106,10 +102,6 @@ export const createProductSchema = z
         "Variant option names (e.g. 'Size', 'Color') are required when variants are enabled.",
     }
   );
-
-/* ─────────────────────────────────────────────
- *  Update Product
- * ───────────────────────────────────────────── */
 
 export const updateProductSchema = z
   .object({

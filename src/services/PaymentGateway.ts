@@ -42,8 +42,6 @@ class PaystackGateway implements PaymentGateway {
     const mapped = PAYSTACK_CHANNEL_MAP[params.paymentMethod];
     if (mapped) channels.push(mapped);
 
-    // @Supabase@Idris001
-
     const initParams: Parameters<
       typeof PaystackService.initializeTransaction
     >[0] = {

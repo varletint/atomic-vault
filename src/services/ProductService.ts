@@ -223,7 +223,7 @@ export class ProductService {
     }
   }
 
-  /* ── Update ─────────────────────────────── */
+  /* ── Update ── */
 
   static async updateProduct(
     productId: string,
@@ -241,7 +241,6 @@ export class ProductService {
       );
     }
 
-    // Simple scalar fields
     const scalars = [
       "name",
       "shortDescription",
