@@ -10,24 +10,11 @@ declare global {
   }
 }
 
-/**
- * Authentication Middleware
- *
- * Intercepts incoming requests, checks for a valid access token in the
- * Authorization header (Bearer scheme) or cookies, and attaches the
- * decoded user payload to `req.user`.
- * Throws a 401 Unauthorized securely if the token is missing or invalid.
- */
 export const authMiddleware = (
   req: Request,
   res: Response,
   next: NextFunction
 ): void => {
-  // const authHeader = req.headers.authorization;
-  // const token = authHeader?.startsWith("Bearer ")
-  //   ? authHeader.slice(7)
-  //   : (req.cookies?.accessToken as string | undefined);
-
   const token = req.cookies?.accessToken as string | undefined;
 
   if (!token) {
