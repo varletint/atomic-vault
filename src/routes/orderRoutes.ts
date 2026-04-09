@@ -39,7 +39,7 @@ router.patch(
 router.use(authMiddleware);
 
 router.post("/", validate(createOrderSchema), OrderController.createOrder);
-// router.get("/", OrderController.getUserOrders);
+router.get("/", OrderController.getUserOrders);
 router.get("/:orderId", OrderController.getOrderById);
 
 router.patch("/:orderId/confirm", OrderController.confirmOrder);
