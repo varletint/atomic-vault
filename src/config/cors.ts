@@ -3,6 +3,7 @@ import type { CorsOptions } from "cors";
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(",")
   : [
+      "http://10.45.11.108:5173",
       "https://adminvault.vercel.app",
       "https://ahcommerce.vercel.app",
       "http://localhost:3000",
