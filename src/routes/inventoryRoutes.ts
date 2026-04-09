@@ -10,6 +10,11 @@ import {
 const router = Router();
 
 router.get("/:productId", InventoryController.getByProductId);
+router.get(
+  "/:productId/movements",
+  authMiddleware,
+  InventoryController.getMovements
+);
 
 router.patch(
   "/:productId/adjust",
