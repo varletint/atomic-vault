@@ -1,9 +1,5 @@
 import mongoose, { Schema, type Document, type Types } from "mongoose";
 
-/* ─────────────────────────────────────────────
- *  Sub-document interfaces
- * ───────────────────────────────────────────── */
-
 export interface IProductImage {
   url: string;
   altText?: string;
@@ -41,10 +37,6 @@ export interface IDimensions {
   unit: "cm" | "in";
 }
 
-/* ─────────────────────────────────────────────
- *  Main Product interface
- * ───────────────────────────────────────────── */
-
 export interface IProduct extends Document {
   _id: Types.ObjectId;
   sku: string;
@@ -60,38 +52,29 @@ export interface IProduct extends Document {
   tags: string[];
   productType: "physical" | "digital" | "service";
 
-  // Images
   images: IProductImage[];
 
-  // Variants
   hasVariants: boolean;
   variants: IProductVariant[];
   variantOptionNames: string[]; // e.g. ["Size", "Color"]
 
-  // Shipping / physical
   weight?: number;
   weightUnit: "g" | "kg" | "lb" | "oz";
   dimensions?: IDimensions;
   material?: string;
   careInstructions?: string;
 
-  // Merchandising
   isFeatured: boolean;
   avgRating: number;
   reviewCount: number;
   minOrderQty: number;
 
-  // SEO
   seo?: IProductSeo;
 
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
-
-/* ─────────────────────────────────────────────
- *  Sub-schemas
- * ───────────────────────────────────────────── */
 
 const productImageSchema = new Schema<IProductImage>(
   {
@@ -111,44 +94,41 @@ const variantOptionSchema = new Schema<IVariantOption>(
   { _id: false }
 );
 
-const productVariantSchema = new Schema<IProductVariant>(
-  {
-    sku: {
-      type: String,
-      required: true,
-      uppercase: true,
-      trim: true,
-    },
-    variantOptions: {
-      type: [variantOptionSchema],
-      required: true,
-      validate: [
-        (val: IVariantOption[]) => val.length > 0,
-        "Variant must have at least one option",
-      ],
-    },
-    price: {
-      type: Number,
-      required: true,
-      min: [0, "Variant price cannot be negative"],
-    },
-    compareAtPrice: {
-      type: Number,
-      min: [0, "Compare-at price cannot be negative"],
-    },
-    costPrice: {
-      type: Number,
-      min: [0, "Cost price cannot be negative"],
-    },
-    weight: {
-      type: Number,
-      min: [0, "Weight cannot be negative"],
-    },
-    images: { type: [productImageSchema], default: [] },
-    isActive: { type: Boolean, default: true },
-  }
-  // Variant sub-docs get their own _id (used as reference in Cart/Order/Inventory)
-);
+const productVariantSchema = new Schema<IProductVariant>({
+  sku: {
+    type: String,
+    required: true,
+    uppercase: true,
+    trim: true,
+  },
+  variantOptions: {
+    type: [variantOptionSchema],
+    required: true,
+    validate: [
+      (val: IVariantOption[]) => val.length > 0,
+      "Variant must have at least one option",
+    ],
+  },
+  price: {
+    type: Number,
+    required: true,
+    min: [0, "Variant price cannot be negative"],
+  },
+  compareAtPrice: {
+    type: Number,
+    min: [0, "Compare-at price cannot be negative"],
+  },
+  costPrice: {
+    type: Number,
+    min: [0, "Cost price cannot be negative"],
+  },
+  weight: {
+    type: Number,
+    min: [0, "Weight cannot be negative"],
+  },
+  images: { type: [productImageSchema], default: [] },
+  isActive: { type: Boolean, default: true },
+});
 
 const productSeoSchema = new Schema<IProductSeo>(
   {
@@ -168,10 +148,6 @@ const dimensionsSchema = new Schema<IDimensions>(
   },
   { _id: false }
 );
-
-/* ─────────────────────────────────────────────
- *  Product schema
- * ───────────────────────────────────────────── */
 
 const productSchema = new Schema<IProduct>(
   {
@@ -215,15 +191,12 @@ const productSchema = new Schema<IProduct>(
       required: true,
     },
 
-    // Images
     images: { type: [productImageSchema], default: [] },
 
-    // Variants
     hasVariants: { type: Boolean, default: false },
     variants: { type: [productVariantSchema], default: [] },
     variantOptionNames: { type: [String], default: [] },
 
-    // Shipping / physical
     weight: { type: Number, min: [0, "Weight cannot be negative"] },
     weightUnit: {
       type: String,
@@ -234,13 +207,11 @@ const productSchema = new Schema<IProduct>(
     material: { type: String, trim: true },
     careInstructions: { type: String },
 
-    // Merchandising
     isFeatured: { type: Boolean, default: false },
     avgRating: { type: Number, default: 0, min: 0, max: 5 },
     reviewCount: { type: Number, default: 0, min: 0 },
     minOrderQty: { type: Number, default: 1, min: 1 },
 
-    // SEO
     seo: { type: productSeoSchema },
 
     isActive: { type: Boolean, default: true },
@@ -249,10 +220,6 @@ const productSchema = new Schema<IProduct>(
     timestamps: true,
   }
 );
-
-/* ─────────────────────────────────────────────
- *  Indexes
- * ───────────────────────────────────────────── */
 
 productSchema.index({ category: 1, isActive: 1 });
 productSchema.index({ name: "text", description: "text" });
