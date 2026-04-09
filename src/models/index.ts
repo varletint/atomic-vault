@@ -1,8 +1,3 @@
-/**
- * Barrel export for all models.
- * Import from here: import { User, Order, Product } from "./models/index.js";
- */
-
 export {
   User,
   type IUser,
@@ -23,6 +18,11 @@ export {
   type IDimensions,
 } from "./Product.js";
 export { Inventory, type IInventory } from "./Inventory.js";
+export {
+  StockMovement,
+  type IStockMovement,
+  type StockMovementType,
+} from "./StockMovement.js";
 export { Cart, type ICart, type ICartItem } from "./Cart.js";
 export {
   Order,
@@ -52,7 +52,11 @@ export {
   type NotificationStatus,
   type NotificationType,
 } from "./NotificationLog.js";
-export { OrderDocument, type IOrderDocument, type OrderDocumentType } from "./OrderDocument.js";
+export {
+  OrderDocument,
+  type IOrderDocument,
+  type OrderDocumentType,
+} from "./OrderDocument.js";
 export {
   AuditLog,
   type IAuditLog,
