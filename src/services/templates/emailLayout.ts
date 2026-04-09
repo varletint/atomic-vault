@@ -1,10 +1,6 @@
 import type { IOrder, IOrderItem } from "../../models/index.js";
 import { formatMinorCurrency } from "../../utils/currency.js";
 
-/* ------------------------------------------------------------------ */
-/*  HTML helpers                                                       */
-/* ------------------------------------------------------------------ */
-
 export function escapeHtml(input: string): string {
   return input
     .replaceAll("&", "&amp;")
@@ -18,16 +14,12 @@ export function escapeAttr(input: string): string {
   return escapeHtml(input);
 }
 
-/* ------------------------------------------------------------------ */
-/*  OrderEmailData                                                     */
-/* ------------------------------------------------------------------ */
-
 export interface OrderEmailItemRow {
   productName: string;
   variantLabel?: string;
   quantity: number;
-  unitPrice: string; // formatted
-  subtotal: string; // formatted
+  unitPrice: string;
+  subtotal: string;
 }
 
 export interface OrderEmailData {
@@ -80,10 +72,6 @@ export function buildOrderEmailData(order: IOrder): OrderEmailData {
   };
 }
 
-/* ------------------------------------------------------------------ */
-/*  Shared email layout                                                */
-/* ------------------------------------------------------------------ */
-
 export function wrapLayout(title: string, bodyHtml: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -97,7 +85,7 @@ export function wrapLayout(title: string, bodyHtml: string): string {
     <tr>
       <td align="center" style="padding:24px 16px;">
         <table role="presentation" width="600" cellpadding="0" cellspacing="0"
-               style="max-width:600px; width:100%; background:#ffffff; border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+               style="max-width:600px; width:100%; background:#ffffff;  overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
           <!-- Header -->
           <tr>
             <td style="background:#1a1a2e; padding:24px 32px;">
@@ -131,10 +119,6 @@ export function wrapLayout(title: string, bodyHtml: string): string {
 </html>`;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Reusable HTML fragments                                            */
-/* ------------------------------------------------------------------ */
-
 export function renderItemsTableHtml(data: OrderEmailData): string {
   const rows = data.items
     .map(
@@ -163,7 +147,7 @@ export function renderItemsTableHtml(data: OrderEmailData): string {
     .join("");
 
   return `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #eee; border-radius:6px; overflow:hidden; margin:16px 0;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #eee;  overflow:hidden; margin:16px 0;">
       <thead>
         <tr style="background:#f9f9fb;">
           <th style="padding:10px 12px; text-align:left; font-size:13px; color:#666; font-weight:600;">Item</th>
@@ -204,7 +188,7 @@ export function renderTotalsHtml(data: OrderEmailData): string {
 
 export function renderAddressHtml(label: string, address: string): string {
   return `
-    <div style="background:#f9f9fb; border-radius:6px; padding:12px 16px; margin:16px 0;">
+    <div style="background:#f9f9fb;  padding:12px 16px; margin:16px 0;">
       <p style="margin:0 0 4px; font-size:12px; color:#888; text-transform:uppercase; letter-spacing:0.5px;">${escapeHtml(
         label
       )}</p>
