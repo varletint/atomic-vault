@@ -37,19 +37,15 @@ const dimensionsSchema = z.object({
   unit: z.enum(["cm", "in"]).default("cm"),
 });
 
-/* ─────────────────────────────────────────────
- *  Create Product
- * ───────────────────────────────────────────── */
+/*  Create Product */
 
 export const createProductSchema = z
   .object({
-    // Required core
     name: z.string().min(1, "Name is required"),
     description: z.string().min(1, "Description is required"),
     price: z.number().min(0, "Price cannot be negative"),
     category: z.string().min(1, "Category is required"),
 
-    // Optional core
     shortDescription: z.string().optional(),
     compareAtPrice: z.number().min(0).optional(),
     costPrice: z.number().min(0).optional(),
@@ -57,34 +53,27 @@ export const createProductSchema = z
     tags: z.array(z.string()).default([]),
     productType: z.enum(["physical", "digital", "service"]).default("physical"),
 
-    // Images
     images: z.array(productImageSchema).default([]),
 
-    // Variants
     hasVariants: z.boolean().default(false),
     variants: z.array(variantSchema).default([]),
     variantOptionNames: z.array(z.string()).default([]),
 
-    // Shipping / physical
     weight: z.number().min(0).optional(),
     weightUnit: z.enum(["g", "kg", "lb", "oz"]).default("g"),
     dimensions: dimensionsSchema.optional(),
     material: z.string().optional(),
     careInstructions: z.string().optional(),
 
-    // Merchandising
     isFeatured: z.boolean().default(false),
     minOrderQty: z.number().int().min(1).default(1),
 
-    // SEO
     seo: seoSchema.optional(),
 
-    // Inventory (initial stock for the first variant or product-level)
     initialStock: z.number().int().min(0).optional(),
   })
   .refine(
     (data) => {
-      // If hasVariants is true, must have at least one variant
       if (data.hasVariants && data.variants.length === 0) return false;
       return true;
     },
@@ -92,7 +81,6 @@ export const createProductSchema = z
   )
   .refine(
     (data) => {
-      // If hasVariants, variantOptionNames should be provided
       if (data.hasVariants && data.variantOptionNames.length === 0)
         return false;
       return true;
