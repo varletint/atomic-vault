@@ -140,6 +140,19 @@ export class OutboxProcessor {
       return;
     }
 
+    if (event.type === "INVENTORY_LOW_STOCK") {
+      const inv = payload as unknown as {
+        productId?: string;
+        stock?: number;
+        available?: number;
+        threshold?: number;
+      };
+      console.warn(
+        `[inventory] LOW STOCK: product=${inv.productId} stock=${inv.stock} available=${inv.available} threshold=${inv.threshold}`
+      );
+      return;
+    }
+
     throw new Error(`Unhandled outbox event type: ${event.type}`);
   }
 }
