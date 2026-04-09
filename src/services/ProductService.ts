@@ -137,9 +137,7 @@ export interface UpdateProductInput {
   seo?: IProductSeo | undefined;
 }
 
-/* ─────────────────────────────────────────────
- *  Service
- * ───────────────────────────────────────────── */
+/*   Service */
 
 export class ProductService {
   static async createProduct(
