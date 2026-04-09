@@ -81,7 +81,6 @@ export const errorHandler = (
     return;
   }
 
-  // ── 4. Unknown / unexpected error (bug) ──
   console.error("[UNEXPECTED ERROR]", err);
   res.status(500).json({
     success: false,
