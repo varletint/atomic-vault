@@ -1,5 +1,9 @@
 import "dotenv/config";
-import express, { type Request, type Response } from "express";
+import express, {
+  type Request,
+  type Response,
+  type NextFunction,
+} from "express";
 import mongoose from "mongoose";
 import cookieParser from "cookie-parser";
 import cors from "cors";
@@ -23,9 +27,45 @@ const PORT = process.env.PORT || 3000;
 const MONGODB_URI =
   process.env.MONGODB_URI || "mongodb://localhost:27017/order-system";
 
-const isDevelopment = process.env.NODE_ENV !== "production";
+let cachedDb: typeof mongoose | null = null;
 
-app.use(isDevelopment ? cors(devCorsOptions) : cors(corsOptions));
+async function connectToDatabase() {
+  if (cachedDb && mongoose.connection.readyState === 1) {
+    return cachedDb;
+  }
+
+  try {
+    const db = await mongoose.connect(MONGODB_URI, {
+      bufferCommands: false,
+      serverSelectionTimeoutMS: 5000,
+      connectTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
+    });
+
+    cachedDb = db;
+    console.log("MongoDB connected successfully");
+    return db;
+  } catch (error) {
+    console.error(" MongoDB connection error:", error);
+    cachedDb = null;
+    throw error;
+  }
+}
+
+app.use(
+  cors(process.env.NODE_ENV === "production" ? corsOptions : devCorsOptions)
+);
+
+if (process.env.NODE_ENV === "production") {
+  app.use(async (_req: Request, _res: Response, next: NextFunction) => {
+    try {
+      await connectToDatabase();
+      next();
+    } catch (error) {
+      next(error);
+    }
+  });
+}
 
 app.post(
   "/api/orders/webhook/paystack",
@@ -70,7 +110,6 @@ app.use("/api/cart", cartRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/storage", storageRoutes);
 
-// Mount SEO routes at the root level
 app.use("/", seoRoutes);
 
 app.use((_req: Request, res: Response) => {
@@ -81,28 +120,6 @@ app.use((_req: Request, res: Response) => {
 });
 
 app.use(errorHandler);
-
-let cachedDb: typeof mongoose | null = null;
-
-async function connectToDatabase() {
-  if (cachedDb && mongoose.connection.readyState === 1) {
-    return cachedDb;
-  }
-
-  try {
-    const db = await mongoose.connect(MONGODB_URI, {
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
-    });
-
-    cachedDb = db;
-    console.log("MongoDB connected successfully");
-    return db;
-  } catch (error) {
-    console.error(" MongoDB connection error:", error);
-    throw error;
-  }
-}
 
 if (process.env.NODE_ENV !== "production") {
   connectToDatabase()
