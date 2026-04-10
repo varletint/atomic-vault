@@ -37,7 +37,8 @@ export class InventoryService {
     quantity: number,
     direction: 1 | -1,
     session?: ClientSession | null,
-    reference?: { orderId?: string; reason?: string }
+    reference?: { orderId?: string; reason?: string },
+    performedBy?: string
   ): Promise<void> {
     const doc = {
       product: inventory.product,
@@ -47,6 +48,9 @@ export class InventoryService {
       direction,
       balanceAfter: inventory.stock,
       reservedAfter: inventory.reserved,
+      ...(performedBy && {
+        performedBy: new mongoose.Types.ObjectId(performedBy),
+      }),
       ...(reference && {
         reference: {
           ...(reference.orderId && {
@@ -126,7 +130,8 @@ export class InventoryService {
   static async adjustStock(
     productId: string,
     quantity: number,
-    reason?: string
+    reason?: string,
+    performedBy?: string
   ): Promise<IInventory> {
     await InventoryService.ensureActiveProduct(productId);
 
@@ -156,7 +161,8 @@ export class InventoryService {
       {
         reason:
           reason ?? `Manual adjustment: ${quantity > 0 ? "+" : ""}${quantity}`,
-      }
+      },
+      performedBy
     );
 
     await InventoryService.checkLowStock(inventory, productId);
@@ -167,7 +173,8 @@ export class InventoryService {
   static async reserveStock(
     productId: string,
     quantity: number,
-    session?: ClientSession | null
+    session?: ClientSession | null,
+    performedBy?: string
   ): Promise<IInventory> {
     if (quantity <= 0)
       throw ValidationError("Quantity must be greater than zero.");
@@ -202,7 +209,9 @@ export class InventoryService {
         "RESERVE",
         quantity,
         -1,
-        sess
+        sess,
+        undefined,
+        performedBy
       );
 
       if (ownSession) {
@@ -224,7 +233,8 @@ export class InventoryService {
   static async releaseReservation(
     productId: string,
     quantity: number,
-    session?: ClientSession | null
+    session?: ClientSession | null,
+    performedBy?: string
   ): Promise<IInventory> {
     if (quantity <= 0)
       throw ValidationError("Quantity must be greater than zero.");
@@ -257,7 +267,9 @@ export class InventoryService {
         "RELEASE",
         quantity,
         1,
-        sess
+        sess,
+        undefined,
+        performedBy
       );
 
       if (ownSession) {
@@ -279,7 +291,8 @@ export class InventoryService {
   static async commitReservation(
     productId: string,
     quantity: number,
-    session?: ClientSession | null
+    session?: ClientSession | null,
+    performedBy?: string
   ): Promise<IInventory> {
     if (quantity <= 0)
       throw ValidationError("Quantity must be greater than zero.");
@@ -319,7 +332,9 @@ export class InventoryService {
         "COMMIT",
         quantity,
         -1,
-        sess
+        sess,
+        undefined,
+        performedBy
       );
 
       if (ownSession) {

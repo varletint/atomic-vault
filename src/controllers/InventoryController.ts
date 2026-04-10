@@ -27,7 +27,12 @@ export class InventoryController {
     const { productId } = req.params as { productId: string };
     const { quantity } = req.body as z.infer<typeof adjustStockSchema>;
 
-    const inventory = await InventoryService.adjustStock(productId, quantity);
+    const inventory = await InventoryService.adjustStock(
+      productId,
+      quantity,
+      undefined,
+      req.user?.userId
+    );
     res
       .status(200)
       .json({ success: true, message: "Stock adjusted.", data: inventory });
@@ -37,7 +42,12 @@ export class InventoryController {
     const { productId } = req.params as { productId: string };
     const { quantity } = req.body as z.infer<typeof stockQuantitySchema>;
 
-    const inventory = await InventoryService.reserveStock(productId, quantity);
+    const inventory = await InventoryService.reserveStock(
+      productId,
+      quantity,
+      null,
+      req.user?.userId
+    );
     res
       .status(200)
       .json({ success: true, message: "Stock reserved.", data: inventory });
@@ -50,7 +60,9 @@ export class InventoryController {
 
       const inventory = await InventoryService.releaseReservation(
         productId,
-        quantity
+        quantity,
+        null,
+        req.user?.userId
       );
       res.status(200).json({
         success: true,
@@ -67,7 +79,9 @@ export class InventoryController {
 
       const inventory = await InventoryService.commitReservation(
         productId,
-        quantity
+        quantity,
+        null,
+        req.user?.userId
       );
       res.status(200).json({
         success: true,
