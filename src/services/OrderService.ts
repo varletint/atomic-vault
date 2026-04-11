@@ -15,7 +15,7 @@ import {
 } from "../models/index.js";
 import { NotFoundError, ValidationError, FsmError } from "../utils/AppError.js";
 import { InventoryService } from "./InventoryService.js";
-import { resolveGateway, type ChargeParams } from "./PaymentGateway.js";
+import { resolveGateway, type ChargeParams } from "../payments/index.js";
 import { OutboxService } from "./OutboxService.js";
 import {
   ORDER_GUEST_MAX_ITEMS_TOTAL_KOBO,
