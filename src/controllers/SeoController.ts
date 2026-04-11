@@ -5,6 +5,14 @@ import { Product } from "../models/Product.js";
 const sitemapCache = new Map<string, { xml: string; generatedAt: number }>();
 const SITEMAP_TTL_MS = 10 * 60 * 1000;
 
+function absoluteUrl(siteOrigin: string, pathOrUrl: string): string {
+  const origin = siteOrigin.replace(/\/$/, "");
+  const p = pathOrUrl.trim();
+  if (/^https?:\/\//i.test(p)) return p;
+  const path = p.startsWith("/") ? p : `/${p}`;
+  return `${origin}${path}`;
+}
+
 function getCachedSitemap(key: string): string | null {
   const cached = sitemapCache.get(key);
   if (cached && Date.now() - cached.generatedAt < SITEMAP_TTL_MS) {
@@ -233,50 +241,80 @@ Sitemap: ${apiBase}/sitemap.xml
           .json({ error: "Path query parameter is required" });
       }
 
+      const siteUrl = (process.env.SITE_URL || "http://localhost:5173").replace(
+        /\/$/,
+        ""
+      );
+      // OG crawlers need absolute URLs; prefer a PNG/JPEG in /public (e.g. og-default.png).
+      const defaultOgPath = process.env.OG_DEFAULT_IMAGE_PATH || "/favicon.svg";
+      const defaultImage = absoluteUrl(siteUrl, defaultOgPath);
+
       // Default meta
       const defaultMeta = {
         title: "Atomic Order",
         description: "Seamless order management platform.",
+        url: siteUrl,
+        image: defaultImage,
       };
 
       // Handle product pages: /products/some-slug
       if (path.startsWith("/products/") && path.length > 10) {
         const slug = path.replace("/products/", "");
-        const product = await Product.findOne({ slug, isActive: true });
+        const product = await Product.findOne({ slug, isActive: true }).lean();
 
         if (product) {
+          const primary =
+            product.images?.find((img) => img.isPrimary) ?? product.images?.[0];
+          const productImage = primary?.url
+            ? absoluteUrl(siteUrl, primary.url)
+            : defaultImage;
+
           return res.json({
             title: `${product.name} | Atomic Order`,
             description: product.description.substring(0, 160),
+            url: `${siteUrl}/products/${product.slug}`,
+            image: productImage,
           });
         }
       }
 
       // Static routes metadata
-      const routeMeta: Record<string, { title: string; description: string }> =
-        {
-          "/": {
-            title: "Home | Atomic Order",
-            description:
-              "Welcome to Atomic Order, the best place for your purchases.",
-          },
-          "/products": {
-            title: "Products | Atomic Order",
-            description: "Browse our catalog of awesome products.",
-          },
-          "/login": {
-            title: "Login | Atomic Order",
-            description: "Log in to your Atomic Order account.",
-          },
-          "/register": {
-            title: "Register | Atomic Order",
-            description: "Create your Atomic Order account.",
-          },
-          "/cart": {
-            title: "Shopping Cart | Atomic Order",
-            description: "View the items in your cart.",
-          },
-        };
+      const routeMeta: Record<
+        string,
+        { title: string; description: string; url: string; image: string }
+      > = {
+        "/": {
+          title: "Home | Atomic Order",
+          description:
+            "Welcome to Atomic Order, the best place for your purchases.",
+          url: siteUrl,
+          image: defaultImage,
+        },
+        "/products": {
+          title: "Products | Atomic Order",
+          description: "Browse our catalog of awesome products.",
+          url: `${siteUrl}/products`,
+          image: defaultImage,
+        },
+        "/login": {
+          title: "Login | Atomic Order",
+          description: "Log in to your Atomic Order account.",
+          url: `${siteUrl}/login`,
+          image: defaultImage,
+        },
+        "/register": {
+          title: "Register | Atomic Order",
+          description: "Create your Atomic Order account.",
+          url: `${siteUrl}/register`,
+          image: defaultImage,
+        },
+        "/cart": {
+          title: "Shopping Cart | Atomic Order",
+          description: "View the items in your cart.",
+          url: `${siteUrl}/cart`,
+          image: defaultImage,
+        },
+      };
 
       const meta = routeMeta[path] || defaultMeta;
       res.json(meta);
