@@ -1,8 +1,8 @@
-name: Feature CI Pipeline
+name: Paystack Payment Gateway CI Pipeline
 
 on:
   push:
-    branches: ["feature", "main"]
+    branches: ["payment-gateway", "main"]
   pull_request:
     branches: ["main"]
 

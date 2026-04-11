@@ -3,7 +3,7 @@ import { asyncHandler } from "../middleware/asyncHandler.js";
 import { OrderService } from "../services/OrderService.js";
 import { OutboxProcessor } from "../services/OutboxProcessor.js";
 import { ValidationError } from "../utils/AppError.js";
-import { PaystackService } from "../services/PaystackService.js";
+import { parsePaystackWebhook } from "../payments/webhook.js";
 import type { z } from "zod";
 import type {
   createOrderSchema,
@@ -252,13 +252,16 @@ export class OrderController {
   });
 
   static paystackWebhook = asyncHandler(async (req: Request, res: Response) => {
-    const signature = req.headers["x-paystack-signature"] as string;
-
-    if (!signature) {
-      res.status(400).json({ success: false, message: "Missing signature." });
-      return;
-    }
-
+    /**
+     * MIGRATION: inline signature + JSON parsing replaced by `parsePaystackWebhook`
+     * (`src/payments/webhook.ts`), HMAC via `PaystackClient`.
+     *
+     * LEGACY (reference):
+     *   const signature = req.headers["x-paystack-signature"] as string;
+     *   PaystackClient.validateWebhookSignature(rawBody, signature);
+     *   JSON.parse(rawBody.toString("utf8")); … charge.success → verifyPayment
+     */
+    const signature = req.headers["x-paystack-signature"] as string | undefined;
     const rawBody =
       req.body instanceof Buffer
         ? req.body
@@ -266,29 +269,25 @@ export class OrderController {
             typeof req.body === "string" ? req.body : JSON.stringify(req.body),
             "utf8"
           );
-    const isValid = PaystackService.validateWebhookSignature(
-      rawBody,
-      signature
-    );
 
-    if (!isValid) {
-      res.status(401).json({ success: false, message: "Invalid signature." });
+    const parsed = parsePaystackWebhook(rawBody, signature);
+    if (!parsed.ok) {
+      const status =
+        parsed.reason === "invalid_signature"
+          ? 401
+          : 400;
+      const message =
+        parsed.reason === "missing_signature"
+          ? "Missing signature."
+          : parsed.reason === "invalid_signature"
+            ? "Invalid signature."
+            : "Invalid JSON body.";
+      res.status(status).json({ success: false, message });
       return;
     }
 
-    let payload: unknown;
-    try {
-      payload = JSON.parse(rawBody.toString("utf8")) as unknown;
-    } catch {
-      res.status(400).json({ success: false, message: "Invalid JSON body." });
-      return;
-    }
-
-    const event = payload as { event?: string; data?: { reference?: string } };
-
-    const reference = event.data?.reference;
-    if (event.event === "charge.success" && reference) {
-      await OrderService.verifyPayment(reference);
+    if (parsed.event === "charge.success" && parsed.reference) {
+      await OrderService.verifyPayment(parsed.reference);
     }
 
     res.status(200).json({ success: true });
