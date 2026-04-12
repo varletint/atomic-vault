@@ -9,6 +9,7 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import { corsOptions, devCorsOptions } from "./config/cors.js";
 import { errorHandler } from "./middleware/errorHandler.js";
+import { ogBotMiddleware } from "./middleware/ogBotMiddleware.js";
 import { OrderController } from "./controllers/OrderController.js";
 
 import {
@@ -76,6 +77,9 @@ app.post(
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
+
+// Intercept social-media bot requests and serve pre-rendered OG meta HTML
+app.use(ogBotMiddleware);
 
 app.get("/", (_req: Request, res: Response) => {
   res.json({

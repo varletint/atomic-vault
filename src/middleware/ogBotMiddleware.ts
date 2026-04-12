@@ -1,10 +1,6 @@
 import { type Request, type Response, type NextFunction } from "express";
 import { Product } from "../models/Product.js";
 
-/**
- * Bot user agents that request OG meta for social previews.
- * These bots do NOT execute JavaScript, so they need pre-rendered HTML.
- */
 const BOT_AGENTS = [
   "whatsapp",
   "facebookexternalhit",
@@ -68,7 +64,6 @@ function generateHTML(meta: PageMeta): string {
 </html>`;
 }
 
-/** Static page metadata */
 const PAGE_META: Record<string, { title: string; description: string }> = {
   "/": {
     title: `${SITE_NAME} - Seamless Order Management`,
@@ -97,9 +92,6 @@ const PAGE_META: Record<string, { title: string; description: string }> = {
   },
 };
 
-/**
- * Fetch product meta by slug from the database.
- */
 async function getProductMeta(
   slug: string,
   siteUrl: string,
@@ -129,15 +121,6 @@ async function getProductMeta(
   }
 }
 
-/**
- * Express middleware: intercepts bot requests and serves pre-rendered
- * HTML with OG meta tags for social media previews.
- *
- * For regular users, passes through to the next middleware (the SPA).
- *
- * Works on both local Express and Vercel (@vercel/node) since it's
- * standard Express middleware running inside the same app.
- */
 export function ogBotMiddleware(
   req: Request,
   res: Response,
@@ -145,7 +128,6 @@ export function ogBotMiddleware(
 ) {
   const userAgent = req.headers["user-agent"] || "";
 
-  // Only intercept for bots
   if (!isBot(userAgent)) {
     return next();
   }
@@ -154,21 +136,14 @@ export function ogBotMiddleware(
   const defaultImage = `${siteUrl}/favicon.svg`;
   const pathname = req.path;
 
-  // Handle async product lookups
   (async () => {
     let meta: PageMeta | null = null;
 
-    // ──────────────────────────────────
-    // ROUTE: Product pages /products/:slug
-    // ──────────────────────────────────
     const productMatch = pathname.match(/^\/products\/([a-zA-Z0-9_-]+)$/);
     if (productMatch) {
       meta = await getProductMeta(productMatch[1], siteUrl, defaultImage);
     }
 
-    // ──────────────────────────────────
-    // FALLBACK: Static page meta
-    // ──────────────────────────────────
     if (!meta) {
       const pageMeta = PAGE_META[pathname] || PAGE_META["/"];
       meta = {
