@@ -133,7 +133,7 @@ export function ogBotMiddleware(
   }
 
   const siteUrl = process.env.SITE_URL || "http://localhost:5173";
-  const defaultImage = `${siteUrl}/favicon.svg`;
+  const defaultImage = `${siteUrl}/og-default.png`;
   const pathname = req.path;
 
   (async () => {

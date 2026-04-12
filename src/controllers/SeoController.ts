@@ -1,7 +1,6 @@
 import { type Request, type Response, type NextFunction } from "express";
 import { Product } from "../models/Product.js";
 
-// In-memory sitemap cache (10-minute TTL)
 const sitemapCache = new Map<string, { xml: string; generatedAt: number }>();
 const SITEMAP_TTL_MS = 10 * 60 * 1000;
 
@@ -26,10 +25,6 @@ function setCachedSitemap(key: string, xml: string) {
 }
 
 export class SeoController {
-  /**
-   * Sitemap index — references individual sub-sitemaps.
-   * Google recommends splitting sitemaps when URLs exceed 50K.
-   */
   public static async getSitemapIndex(
     req: Request,
     res: Response,
@@ -105,9 +100,6 @@ export class SeoController {
     }
   }
 
-  /**
-   * Products sitemap — all active products with slugs.
-   */
   public static async getProductsSitemap(
     req: Request,
     res: Response,
@@ -153,9 +145,6 @@ export class SeoController {
     }
   }
 
-  /**
-   * Categories sitemap — derived from product categories via aggregation.
-   */
   public static async getCategoriesSitemap(
     req: Request,
     res: Response,
@@ -202,9 +191,6 @@ export class SeoController {
     }
   }
 
-  /**
-   * Dynamic robots.txt.
-   */
   public static getRobotsTxt(req: Request, res: Response, next: NextFunction) {
     try {
       const apiBase = process.env.API_BASE_URL || "http://localhost:3000";
@@ -223,10 +209,6 @@ Sitemap: ${apiBase}/sitemap.xml
     }
   }
 
-  /**
-   * Returns SEO metadata for specific routes.
-   * Handles both static routes and dynamic product pages.
-   */
   public static async getPageMeta(
     req: Request,
     res: Response,
@@ -245,11 +227,11 @@ Sitemap: ${apiBase}/sitemap.xml
         /\/$/,
         ""
       );
-      // OG crawlers need absolute URLs; prefer a PNG/JPEG in /public (e.g. og-default.png).
-      const defaultOgPath = process.env.OG_DEFAULT_IMAGE_PATH || "/favicon.svg";
+
+      const defaultOgPath =
+        process.env.OG_DEFAULT_IMAGE_PATH || "/og-default.png";
       const defaultImage = absoluteUrl(siteUrl, defaultOgPath);
 
-      // Default meta
       const defaultMeta = {
         title: "Atomic Order",
         description: "Seamless order management platform.",
@@ -257,7 +239,6 @@ Sitemap: ${apiBase}/sitemap.xml
         image: defaultImage,
       };
 
-      // Handle product pages: /products/some-slug
       if (path.startsWith("/products/") && path.length > 10) {
         const slug = path.replace("/products/", "");
         const product = await Product.findOne({ slug, isActive: true }).lean();
@@ -278,7 +259,6 @@ Sitemap: ${apiBase}/sitemap.xml
         }
       }
 
-      // Static routes metadata
       const routeMeta: Record<
         string,
         { title: string; description: string; url: string; image: string }
