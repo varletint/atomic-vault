@@ -17,7 +17,7 @@ export function renderOrderDeliveredEmail(data: OrderEmailData): {
 
   const bodyHtml = `
     <div style="text-align:center; margin-bottom:24px;">
-      <span style="display:inline-block; background:#e3f2fd; color:#1565c0; padding:8px 20px; border-radius:20px; font-weight:700; font-size:14px; letter-spacing:0.5px;">
+      <span style="display:inline-block; background:#e3f2fd; color:#1565c0; padding:8px 20px; font-weight:700; font-size:14px; letter-spacing:0.5px;">
         📦 Order Delivered
       </span>
     </div>

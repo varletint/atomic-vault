@@ -137,10 +137,10 @@ export function renderItemsTableHtml(data: OrderEmailData): string {
           item.quantity
         }</td>
         <td style="padding:8px 12px; border-bottom:1px solid #f0f0f0; text-align:right;">${escapeHtml(
-          item.unitPrice
+          formatMinorCurrency(Number(item.unitPrice))
         )}</td>
         <td style="padding:8px 12px; border-bottom:1px solid #f0f0f0; text-align:right;">${escapeHtml(
-          item.subtotal
+          formatMinorCurrency(Number(item.subtotal))
         )}</td>
       </tr>`
     )
@@ -168,19 +168,19 @@ export function renderTotalsHtml(data: OrderEmailData): string {
       <tr>
         <td style="padding:4px 0; color:#666; font-size:14px;">Items Total</td>
         <td style="padding:4px 0; text-align:right; font-size:14px;">${escapeHtml(
-          data.itemsTotal
+          formatMinorCurrency(Number(data.itemsTotal))
         )}</td>
       </tr>
       <tr>
         <td style="padding:4px 0; color:#666; font-size:14px;">Delivery Fee</td>
         <td style="padding:4px 0; text-align:right; font-size:14px;">${escapeHtml(
-          data.deliveryFee
+          formatMinorCurrency(Number(data.deliveryFee))
         )}</td>
       </tr>
       <tr>
         <td style="padding:8px 0 0; font-weight:700; font-size:16px; border-top:2px solid #1a1a2e;">Grand Total</td>
         <td style="padding:8px 0 0; text-align:right; font-weight:700; font-size:16px; border-top:2px solid #1a1a2e;">${escapeHtml(
-          data.grandTotal
+          formatMinorCurrency(Number(data.grandTotal))
         )}</td>
       </tr>
     </table>`;
@@ -203,14 +203,16 @@ export function renderItemsPlainText(data: OrderEmailData): string {
     (item) =>
       `  - ${item.productName}${
         item.variantLabel ? ` (${item.variantLabel})` : ""
-      } x${item.quantity} @ ${item.unitPrice} = ${item.subtotal}`
+      } x${item.quantity} @ ${formatMinorCurrency(
+        Number(item.unitPrice)
+      )} = ${formatMinorCurrency(Number(item.subtotal))}`
   );
   return [
     "Order Items:",
     ...lines,
     "",
-    `Items Total: ${data.itemsTotal}`,
-    `Delivery Fee: ${data.deliveryFee}`,
-    `Grand Total: ${data.grandTotal}`,
+    `Items Total: ${formatMinorCurrency(Number(data.itemsTotal))}`,
+    `Delivery Fee: ${formatMinorCurrency(Number(data.deliveryFee))}`,
+    `Grand Total: ${formatMinorCurrency(Number(data.grandTotal))}`,
   ].join("\n");
 }
