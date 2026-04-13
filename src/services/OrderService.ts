@@ -16,6 +16,7 @@ import {
 import { NotFoundError, ValidationError, FsmError } from "../utils/AppError.js";
 import { InventoryService } from "./InventoryService.js";
 import { resolveGateway, type ChargeParams } from "../payments/index.js";
+import { OutboxProcessor } from "./OutboxProcessor.js";
 import { OutboxService } from "./OutboxService.js";
 import {
   ORDER_GUEST_MAX_ITEMS_TOTAL_KOBO,
@@ -449,25 +450,27 @@ export class OrderService {
       await order.save({ session });
       await session.commitTransaction();
 
-      // Enqueue relevant emails (fire-and-forget, outside the txn)
       if (nextStatus === "DELIVERED") {
         await OutboxService.enqueue({
           type: "ORDER_DELIVERED",
           dedupeKey: `order:${orderId}:delivered`,
           payload: { orderId },
         });
+        OutboxProcessor.scheduleDrain();
       } else if (nextStatus === "CONFIRMED") {
         await OutboxService.enqueue({
           type: "ORDER_CONFIRMED",
           dedupeKey: `order:${orderId}:confirmed`,
           payload: { orderId },
         });
+        OutboxProcessor.scheduleDrain();
       } else if (nextStatus === "SHIPPED") {
         await OutboxService.enqueue({
           type: "ORDER_SHIPPED",
           dedupeKey: `order:${orderId}:shipped`,
           payload: { orderId, note },
         });
+        OutboxProcessor.scheduleDrain();
       }
 
       return order.toObject() as IOrder;
@@ -546,6 +549,7 @@ export class OrderService {
 
       await order.save({ session });
       await session.commitTransaction();
+      OutboxProcessor.scheduleDrain();
       return order.toObject() as IOrder;
     } catch (error) {
       await session.abortTransaction();
@@ -806,6 +810,10 @@ export class OrderService {
 
       await order.save({ session });
       await session.commitTransaction();
+
+      if (result.success) {
+        OutboxProcessor.scheduleDrain();
+      }
 
       return {
         order: order.toObject() as IOrder,
