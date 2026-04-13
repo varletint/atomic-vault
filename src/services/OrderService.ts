@@ -126,9 +126,16 @@ export class OrderService {
 
           const subtotal = product.price * item.quantity;
 
+          const primaryImage =
+            product.images?.find((img) => img.isPrimary)?.url ??
+            product.images?.[0]?.url;
+
           return {
             product: item.product,
             productName: product.name,
+            productSku: product.sku,
+            productImage: primaryImage,
+            productSlug: product.slug,
             quantity: item.quantity,
             pricePerUnit: product.price,
             subtotal,
@@ -242,9 +249,16 @@ export class OrderService {
 
           const subtotal = product.price * quantity;
 
+          const primaryImage =
+            product.images?.find((img) => img.isPrimary)?.url ??
+            product.images?.[0]?.url;
+
           return {
             product: product._id,
             productName: product.name,
+            productSku: product.sku,
+            productImage: primaryImage,
+            productSlug: product.slug,
             quantity,
             pricePerUnit: product.price,
             subtotal,

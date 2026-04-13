@@ -45,6 +45,9 @@ export interface IOrderItem {
   variant?: Types.ObjectId; // references a variant sub-doc _id
   variantLabel?: string; // snapshot: "Blue / L"
   productName: string; // snapshot — product name could change later
+  productSku?: string; // snapshot of product SKU
+  productImage?: string; // snapshot of primary image URL
+  productSlug?: string; // snapshot for building product links
   quantity: number;
   pricePerUnit: number; // in kobo, snapshot at time of order
   subtotal: number; // quantity * pricePerUnit
@@ -92,6 +95,9 @@ const orderItemSchema = new Schema<IOrderItem>(
     },
     variantLabel: { type: String },
     productName: { type: String, required: true },
+    productSku: { type: String },
+    productImage: { type: String },
+    productSlug: { type: String },
     quantity: {
       type: Number,
       required: true,

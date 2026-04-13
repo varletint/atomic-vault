@@ -16,6 +16,9 @@ export function escapeAttr(input: string): string {
 
 export interface OrderEmailItemRow {
   productName: string;
+  productSku?: string;
+  productImage?: string;
+  productSlug?: string;
   variantLabel?: string;
   quantity: number;
   unitPrice: string;
@@ -37,6 +40,9 @@ export function buildOrderEmailData(order: IOrder): OrderEmailData {
 
   const items: OrderEmailItemRow[] = order.items.map((item: IOrderItem) => ({
     productName: item.productName,
+    productSku: item.productSku,
+    productImage: item.productImage,
+    productSlug: item.productSlug,
     variantLabel: item.variantLabel,
     quantity: item.quantity,
     unitPrice: fmt(item.pricePerUnit),
@@ -121,35 +127,51 @@ export function wrapLayout(title: string, bodyHtml: string): string {
 
 export function renderItemsTableHtml(data: OrderEmailData): string {
   const rows = data.items
-    .map(
-      (item) => `
+    .map((item) => {
+      const imgHtml = item.productImage
+        ? `<img src="${escapeAttr(item.productImage)}" alt="${escapeAttr(
+            item.productName
+          )}" width="48" height="48" style="display:block; border-radius:4px; object-fit:cover;" />`
+        : `<div style="width:48px;height:48px;background:#f0f0f0;border-radius:4px;"></div>`;
+
+      const skuHtml = item.productSku
+        ? `<br/><span style="color:#888; font-size:11px;">SKU: ${escapeHtml(
+            item.productSku
+          )}</span>`
+        : "";
+
+      const variantHtml = item.variantLabel
+        ? `<br/><span style="color:#888; font-size:12px;">${escapeHtml(
+            item.variantLabel
+          )}</span>`
+        : "";
+
+      return `
       <tr>
-        <td style="padding:8px 12px; border-bottom:1px solid #f0f0f0;">
-          ${escapeHtml(item.productName)}${
-        item.variantLabel
-          ? `<br/><span style="color:#888; font-size:12px;">${escapeHtml(
-              item.variantLabel
-            )}</span>`
-          : ""
-      }
+        <td style="padding:8px 12px; border-bottom:1px solid #f0f0f0; width:56px; vertical-align:top;">
+          ${imgHtml}
         </td>
-        <td style="padding:8px 12px; border-bottom:1px solid #f0f0f0; text-align:center;">${
+        <td style="padding:8px 12px; border-bottom:1px solid #f0f0f0; vertical-align:top;">
+          ${escapeHtml(item.productName)}${variantHtml}${skuHtml}
+        </td>
+        <td style="padding:8px 12px; border-bottom:1px solid #f0f0f0; text-align:center; vertical-align:top;">${
           item.quantity
         }</td>
-        <td style="padding:8px 12px; border-bottom:1px solid #f0f0f0; text-align:right;">${escapeHtml(
+        <td style="padding:8px 12px; border-bottom:1px solid #f0f0f0; text-align:right; vertical-align:top;">${escapeHtml(
           formatMinorCurrency(Number(item.unitPrice))
         )}</td>
-        <td style="padding:8px 12px; border-bottom:1px solid #f0f0f0; text-align:right;">${escapeHtml(
+        <td style="padding:8px 12px; border-bottom:1px solid #f0f0f0; text-align:right; vertical-align:top;">${escapeHtml(
           formatMinorCurrency(Number(item.subtotal))
         )}</td>
-      </tr>`
-    )
+      </tr>`;
+    })
     .join("");
 
   return `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #eee;  overflow:hidden; margin:16px 0;">
       <thead>
         <tr style="background:#f9f9fb;">
+          <th style="padding:10px 12px; width:56px;"></th>
           <th style="padding:10px 12px; text-align:left; font-size:13px; color:#666; font-weight:600;">Item</th>
           <th style="padding:10px 12px; text-align:center; font-size:13px; color:#666; font-weight:600;">Qty</th>
           <th style="padding:10px 12px; text-align:right; font-size:13px; color:#666; font-weight:600;">Price</th>
@@ -202,8 +224,10 @@ export function renderItemsPlainText(data: OrderEmailData): string {
   const lines = data.items.map(
     (item) =>
       `  - ${item.productName}${
-        item.variantLabel ? ` (${item.variantLabel})` : ""
-      } x${item.quantity} @ ${formatMinorCurrency(
+        item.productSku ? ` [${item.productSku}]` : ""
+      }${item.variantLabel ? ` (${item.variantLabel})` : ""} x${
+        item.quantity
+      } @ ${formatMinorCurrency(
         Number(item.unitPrice)
       )} = ${formatMinorCurrency(Number(item.subtotal))}`
   );
