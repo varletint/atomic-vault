@@ -14,6 +14,13 @@ function backoffMs(attempts: number): number {
 }
 
 export class OutboxProcessor {
+ 
+  static scheduleDrain(): void {
+    void this.drainOnce().catch((err) =>
+      console.error("Instant outbox drain failed:", err)
+    );
+  }
+
   static async drainOnce(opts: ProcessOptions = {}): Promise<{
     processed: number;
     succeeded: number;
