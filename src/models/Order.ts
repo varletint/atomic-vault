@@ -42,30 +42,34 @@ export interface IGuestContact {
 
 export interface IOrderItem {
   product: Types.ObjectId;
-  variant?: Types.ObjectId; // references a variant sub-doc _id
-  variantLabel?: string; // snapshot: "Blue / L"
-  productName: string; // snapshot — product name could change later
-  productSku?: string; // snapshot of product SKU
-  productImage?: string; // snapshot of primary image URL
-  productSlug?: string; // snapshot for building product links
+  variant?: Types.ObjectId; 
+  variantLabel?: string; 
+  productName: string;  
+  productSku?: string; 
+  productImage?: string; 
+  productSlug?: string; 
   quantity: number;
-  pricePerUnit: number; // in kobo, snapshot at time of order
-  subtotal: number; // quantity * pricePerUnit
+  pricePerUnit: number; 
+  subtotal: number; 
 }
 
 export interface IOrder extends Document {
   _id: Types.ObjectId;
   checkoutType: CheckoutType;
-  /** Registered user id; unset for guest checkout */
   user?: Types.ObjectId | null;
   guestContact?: IGuestContact;
   items: IOrderItem[];
-  /** Sum of line subtotals (items only), kobo — excludes deliveryFee */
   totalAmount: number;
-  /** Delivery fee in kobo; not counted toward guest item cap */
   deliveryFee?: number;
+  payment?: {
+    provider?: string;
+    reference?: string;
+    amountPaid?: number;
+    gatewayFee?: number;
+    paidAt?: Date;
+  };
   status: OrderStatus;
-  idempotencyKey: string; // prevents duplicate order creation
+  idempotencyKey: string; 
   shippingAddress: {
     street: string;
     city: string;
@@ -193,6 +197,13 @@ const orderSchema = new Schema<IOrder>(
       default: 0,
       min: [0, "Delivery fee cannot be negative"],
     },
+    payment: {
+      provider: { type: String },
+      reference: { type: String },
+      amountPaid: { type: Number, min: [0, "Amount paid cannot be negative"] },
+      gatewayFee: { type: Number, min: [0, "Gateway fee cannot be negative"] },
+      paidAt: { type: Date },
+    },
     status: {
       type: String,
       enum: [
@@ -219,13 +230,20 @@ const orderSchema = new Schema<IOrder>(
   },
   {
     timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   }
 );
 
-// Indexes for common queries
-orderSchema.index({ user: 1, createdAt: -1 }); // user's order history
-orderSchema.index({ status: 1 }); // filter by status (admin dashboard)
-orderSchema.index({ idempotencyKey: 1 }, { unique: true }); // prevent duplicates
+orderSchema.virtual("netAmount").get(function netAmount() {
+  const amountPaid = this.payment?.amountPaid ?? 0;
+  const gatewayFee = this.payment?.gatewayFee ?? 0;
+  return Math.max(0, amountPaid - gatewayFee);
+});
+
+orderSchema.index({ user: 1, createdAt: -1 }); 
+orderSchema.index({ status: 1 }); 
+orderSchema.index({ idempotencyKey: 1 }, { unique: true }); 
 orderSchema.index({ checkoutType: 1, createdAt: -1 });
 orderSchema.index({ "guestContact.email": 1, createdAt: -1 }, { sparse: true });
 
