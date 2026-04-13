@@ -11,6 +11,7 @@ import { corsOptions, devCorsOptions } from "./config/cors.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { ogBotMiddleware } from "./middleware/ogBotMiddleware.js";
 import { OrderController } from "./controllers/OrderController.js";
+import { ReservationReaperService } from "./services/ReservationReaperService.js";
 
 import {
   userRoutes,
@@ -57,16 +58,15 @@ app.use(
   cors(process.env.NODE_ENV === "production" ? corsOptions : devCorsOptions)
 );
 
-if (process.env.NODE_ENV === "production") {
-  app.use(async (_req: Request, _res: Response, next: NextFunction) => {
-    try {
-      await connectToDatabase();
-      next();
-    } catch (error) {
-      next(error);
-    }
-  });
-}
+app.use(async (_req: Request, _res: Response, next: NextFunction) => {
+  try {
+    await connectToDatabase();
+    ReservationReaperService.kickFromRequest();
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 
 app.post(
   "/api/orders/webhook/paystack",
@@ -128,6 +128,17 @@ app.use(errorHandler);
 if (process.env.NODE_ENV !== "production") {
   connectToDatabase()
     .then(() => {
+      if (process.env.DISABLE_RESERVATION_REAPER !== "true") {
+        const raw = Number(process.env.RESERVATION_REAPER_INTERVAL_MS);
+        const intervalMs =
+          Number.isFinite(raw) && raw > 0 ? raw : 60_000;
+        setInterval(() => {
+          void ReservationReaperService.runOnce({ quiet: true }).catch(
+            (err) => console.error("[reaper] interval run failed:", err)
+          );
+        }, intervalMs);
+      }
+
       app.listen(PORT, () => {
         console.log(` Server running on port ${PORT}`);
         console.log(` Environment: ${process.env.NODE_ENV || "development"}`);
