@@ -11,6 +11,8 @@ import type {
   reasonSchema,
   noteSchema,
   addTrackingEventSchema,
+  adminOrderQuerySchema,
+  guestOrderQuerySchema,
 } from "../schemas/orderSchemas.js";
 
 export class OrderController {
@@ -40,10 +42,9 @@ export class OrderController {
 
   static getGuestOrder = asyncHandler(async (req: Request, res: Response) => {
     const { orderId } = req.params as { orderId: string };
-    const email = req.query.email as string | undefined;
-    if (!email?.trim()) {
-      throw ValidationError("Query parameter `email` is required.");
-    }
+    const { email } = req.query as unknown as z.infer<
+      typeof guestOrderQuerySchema
+    >;
 
     const order = await OrderService.getGuestOrderById(orderId, email);
     res.status(200).json({ success: true, data: order });
@@ -90,20 +91,11 @@ export class OrderController {
   /* ── Admin: list ALL orders (paginated + filterable) ── */
 
   static getAllOrders = asyncHandler(async (req: Request, res: Response) => {
-    const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
-    const limit = Math.min(
-      100,
-      Math.max(1, parseInt(req.query.limit as string, 10) || 20)
-    );
-    const status = (req.query.status as string) || undefined;
-    const search = (req.query.search as string) || undefined;
+    const { page, limit, status, search } = req.query as unknown as z.infer<
+      typeof adminOrderQuerySchema
+    >;
 
-    const result = await OrderService.getAllOrders(
-      page,
-      limit,
-      status as import("../models/Order.js").OrderStatus | undefined,
-      search
-    );
+    const result = await OrderService.getAllOrders(page, limit, status, search);
     res.status(200).json({ success: true, data: result });
   });
 
@@ -267,16 +259,13 @@ export class OrderController {
 
     const parsed = parsePaystackWebhook(rawBody, signature);
     if (!parsed.ok) {
-      const status =
-        parsed.reason === "invalid_signature"
-          ? 401
-          : 400;
+      const status = parsed.reason === "invalid_signature" ? 401 : 400;
       const message =
         parsed.reason === "missing_signature"
           ? "Missing signature."
           : parsed.reason === "invalid_signature"
-            ? "Invalid signature."
-            : "Invalid JSON body.";
+          ? "Invalid signature."
+          : "Invalid JSON body.";
       res.status(status).json({ success: false, message });
       return;
     }
