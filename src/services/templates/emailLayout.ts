@@ -33,6 +33,10 @@ export interface OrderEmailData {
   deliveryFee: string;
   grandTotal: string;
   shippingAddress: string;
+  amountPaid?: string;
+  gatewayFee?: string;
+  paymentReference?: string;
+  paidAt?: string;
 }
 
 export function buildOrderEmailData(order: IOrder): OrderEmailData {
@@ -63,7 +67,7 @@ export function buildOrderEmailData(order: IOrder): OrderEmailData {
     .filter(Boolean)
     .join(", ");
 
-  return {
+  const result: OrderEmailData = {
     orderId: order._id.toString(),
     orderDate: new Date(order.createdAt).toLocaleDateString("en-NG", {
       year: "numeric",
@@ -76,6 +80,22 @@ export function buildOrderEmailData(order: IOrder): OrderEmailData {
     grandTotal: fmt(grandTotal),
     shippingAddress,
   };
+
+  if (order.payment) {
+    if (order.payment.amountPaid != null)
+      result.amountPaid = fmt(order.payment.amountPaid);
+    if (order.payment.gatewayFee != null)
+      result.gatewayFee = fmt(order.payment.gatewayFee);
+    if (order.payment.reference)
+      result.paymentReference = order.payment.reference;
+    if (order.payment.paidAt)
+      result.paidAt = new Date(order.payment.paidAt).toLocaleDateString(
+        "en-NG",
+        { year: "numeric", month: "long", day: "numeric" }
+      );
+  }
+
+  return result;
 }
 
 export function wrapLayout(title: string, bodyHtml: string): string {
@@ -158,10 +178,10 @@ export function renderItemsTableHtml(data: OrderEmailData): string {
           item.quantity
         }</td>
         <td style="padding:8px 12px; border-bottom:1px solid #f0f0f0; text-align:right; vertical-align:top;">${escapeHtml(
-          formatMinorCurrency(Number(item.unitPrice))
+          item.unitPrice
         )}</td>
         <td style="padding:8px 12px; border-bottom:1px solid #f0f0f0; text-align:right; vertical-align:top;">${escapeHtml(
-          formatMinorCurrency(Number(item.subtotal))
+          item.subtotal
         )}</td>
       </tr>`;
     })
@@ -185,26 +205,57 @@ export function renderItemsTableHtml(data: OrderEmailData): string {
 }
 
 export function renderTotalsHtml(data: OrderEmailData): string {
+  const paymentRows: string[] = [];
+
+  if (data.amountPaid) {
+    paymentRows.push(`
+      <tr>
+        <td style="padding:4px 0; color:#666; font-size:14px;">Amount Paid</td>
+        <td style="padding:4px 0; text-align:right; font-size:14px;">${escapeHtml(
+          data.amountPaid
+        )}</td>
+      </tr>`);
+  }
+  if (data.gatewayFee) {
+    paymentRows.push(`
+      <tr>
+        <td style="padding:4px 0; color:#888; font-size:13px;">Gateway Fee</td>
+        <td style="padding:4px 0; text-align:right; color:#888; font-size:13px;">−${escapeHtml(
+          data.gatewayFee
+        )}</td>
+      </tr>`);
+  }
+  if (data.paymentReference) {
+    paymentRows.push(`
+      <tr>
+        <td style="padding:4px 0; color:#888; font-size:13px;">Payment Ref</td>
+        <td style="padding:4px 0; text-align:right; color:#888; font-size:13px;">${escapeHtml(
+          data.paymentReference
+        )}</td>
+      </tr>`);
+  }
+
   return `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 16px;">
       <tr>
         <td style="padding:4px 0; color:#666; font-size:14px;">Items Total</td>
         <td style="padding:4px 0; text-align:right; font-size:14px;">${escapeHtml(
-          formatMinorCurrency(Number(data.itemsTotal))
+          data.itemsTotal
         )}</td>
       </tr>
       <tr>
         <td style="padding:4px 0; color:#666; font-size:14px;">Delivery Fee</td>
         <td style="padding:4px 0; text-align:right; font-size:14px;">${escapeHtml(
-          formatMinorCurrency(Number(data.deliveryFee))
+          data.deliveryFee
         )}</td>
       </tr>
       <tr>
         <td style="padding:8px 0 0; font-weight:700; font-size:16px; border-top:2px solid #1a1a2e;">Grand Total</td>
         <td style="padding:8px 0 0; text-align:right; font-weight:700; font-size:16px; border-top:2px solid #1a1a2e;">${escapeHtml(
-          formatMinorCurrency(Number(data.grandTotal))
+          data.grandTotal
         )}</td>
       </tr>
+      ${paymentRows.join("")}
     </table>`;
 }
 
@@ -227,16 +278,21 @@ export function renderItemsPlainText(data: OrderEmailData): string {
         item.productSku ? ` [${item.productSku}]` : ""
       }${item.variantLabel ? ` (${item.variantLabel})` : ""} x${
         item.quantity
-      } @ ${formatMinorCurrency(
-        Number(item.unitPrice)
-      )} = ${formatMinorCurrency(Number(item.subtotal))}`
+      } @ ${item.unitPrice} = ${item.subtotal}`
   );
-  return [
+  const totals = [
     "Order Items:",
     ...lines,
     "",
-    `Items Total: ${formatMinorCurrency(Number(data.itemsTotal))}`,
-    `Delivery Fee: ${formatMinorCurrency(Number(data.deliveryFee))}`,
-    `Grand Total: ${formatMinorCurrency(Number(data.grandTotal))}`,
-  ].join("\n");
+    `Items Total: ${data.itemsTotal}`,
+    `Delivery Fee: ${data.deliveryFee}`,
+    `Grand Total: ${data.grandTotal}`,
+  ];
+
+  if (data.amountPaid) totals.push(`Amount Paid: ${data.amountPaid}`);
+  if (data.gatewayFee) totals.push(`Gateway Fee: -${data.gatewayFee}`);
+  if (data.paymentReference)
+    totals.push(`Payment Ref: ${data.paymentReference}`);
+
+  return totals.join("\n");
 }

@@ -13,5 +13,5 @@ export function formatMinorCurrency(
     currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(amountMinor);
+  }).format(amountMinor / 100);
 }
