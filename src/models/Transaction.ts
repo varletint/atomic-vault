@@ -3,6 +3,7 @@ import mongoose, { Schema, type Document, type Types } from "mongoose";
 export type TransactionStatus =
   | "INITIATED"
   | "PROCESSING"
+  | "VERIFYING"
   | "SUCCESS"
   | "FAILED"
   | "REFUND_INITIATED"
@@ -70,6 +71,7 @@ const transactionSchema = new Schema<ITransaction>(
       enum: [
         "INITIATED",
         "PROCESSING",
+        "VERIFYING",
         "SUCCESS",
         "FAILED",
         "REFUND_INITIATED",
