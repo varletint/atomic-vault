@@ -126,7 +126,6 @@ export async function sendVerificationEmail(
   const text = `Click the link below to verify your email address:\n\n${verifyUrl}\n\nThis link will expire in 24 hours. If you did not create an account, you can ignore this email.`;
 
   const result = createTransport();
-  console.log("Email result:", result);
   if (!result) {
     if (process.env.NODE_ENV === "production") {
       throw new Error(
@@ -139,7 +138,5 @@ export async function sendVerificationEmail(
     return;
   }
 
-  console.log(`[EmailService] Sending verification email to ${to}…`);
   await result.transport.sendMail({ from: result.from, to, subject, text });
-  console.log(`[EmailService] Verification email sent to ${to}`);
 }
