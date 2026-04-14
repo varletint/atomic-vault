@@ -82,10 +82,6 @@ export class StorageService {
     return { uploadUrl, tempKey, finalKey, publicUrl };
   }
 
-  /**
-   * Move an object from one key to another within the same bucket.
-   * Used after successful entity creation to promote temp → permanent.
-   */
   public static async moveObject(
     sourceKey: string,
     destinationKey: string,
@@ -112,9 +108,6 @@ export class StorageService {
     );
   }
 
-  /**
-   * Delete a single object from a bucket.
-   */
   public static async deleteObject(
     key: string,
     bucket?: string
@@ -130,10 +123,6 @@ export class StorageService {
     );
   }
 
-  /**
-   * Delete multiple objects from a bucket in one call.
-   * Silently ignores keys that don't exist.
-   */
   public static async deleteObjects(
     keys: string[],
     bucket?: string
@@ -154,9 +143,6 @@ export class StorageService {
     );
   }
 
-  /**
-   * List object keys under a given prefix.
-   */
   public static async listObjects(
     prefix: string,
     bucket?: string
@@ -177,9 +163,6 @@ export class StorageService {
     }));
   }
 
-  /**
-   * Pre-signed upload URL for the private bucket.
-   */
   public static async getPrivateUploadUrl(
     key: string,
     contentType: string,
@@ -197,9 +180,6 @@ export class StorageService {
     return await getSignedUrl(this.getClient(), command, { expiresIn });
   }
 
-  /**
-   * Pre-signed read URL for a private-bucket object.
-   */
   public static async getPrivateReadUrl(
     key: string,
     expiresIn: number = 300
@@ -215,10 +195,6 @@ export class StorageService {
     return await getSignedUrl(this.getClient(), command, { expiresIn });
   }
 
-  /**
-   * Server-side upload (Buffer/stream) to private bucket.
-   * Useful for generated artifacts like invoices.
-   */
   public static async putPrivateObject(params: {
     key: string;
     body: Buffer;
@@ -237,9 +213,6 @@ export class StorageService {
     );
   }
 
-  /**
-   * Build the public CDN URL for an asset in the public bucket.
-   */
   public static getPublicUrl(key: string): string {
     const domain = process.env.R2_PUBLIC_DOMAIN;
     if (!domain) {
