@@ -13,3 +13,8 @@ export {
   forgotPasswordLimiter,
   resetPasswordLimiter,
 } from "./rateLimiter.js";
+export {
+  csrfProtection,
+  setCsrfCookie,
+  generateCsrfToken,
+} from "./csrfMiddleware.js";
