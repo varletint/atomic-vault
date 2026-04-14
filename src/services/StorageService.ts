@@ -9,6 +9,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import crypto from "crypto";
+import { logger } from "../utils/logger.js";
 
 const TEMP_PREFIX = "temp/";
 
@@ -216,7 +217,7 @@ export class StorageService {
   public static getPublicUrl(key: string): string {
     const domain = process.env.R2_PUBLIC_DOMAIN;
     if (!domain) {
-      console.warn(
+      logger.warn(
         "R2_PUBLIC_DOMAIN not defined, public URLs will not work correctly."
       );
       return "";

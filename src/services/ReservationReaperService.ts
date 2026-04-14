@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { Order, type OrderStatus } from "../models/index.js";
 import { InventoryService } from "./InventoryService.js";
+import { logger } from "../utils/logger.js";
 
 function reservationTtlMs(): number {
   const n = Number(process.env.RESERVATION_TTL_MS);
@@ -8,28 +9,24 @@ function reservationTtlMs(): number {
 }
 
 export type RunReservationReaperOptions = {
-  
   quiet?: boolean;
 };
-
 
 export class ReservationReaperService {
   private static lastRequestKickoff = 0;
 
-  
   static kickFromRequest(): void {
     if (process.env.DISABLE_RESERVATION_REAPER === "true") return;
 
     const raw = Number(process.env.RESERVATION_REAPER_THROTTLE_MS);
-    const throttleMs =
-      Number.isFinite(raw) && raw > 0 ? raw : 60_000;
+    const throttleMs = Number.isFinite(raw) && raw > 0 ? raw : 60_000;
 
     const now = Date.now();
     if (now - this.lastRequestKickoff < throttleMs) return;
     this.lastRequestKickoff = now;
 
     void this.runOnce({ quiet: true }).catch((err) =>
-      console.error("[reaper] background run failed:", err)
+      logger.error("Reaper background run failed", { error: String(err) })
     );
   }
 
@@ -46,15 +43,13 @@ export class ReservationReaperService {
 
     if (staleOrders.length === 0) {
       if (!opts.quiet) {
-        console.log("[reaper] no stale reservations found");
+        logger.info("No stale reservations found");
       }
       return { scanned: 0, released: 0, failed: 0 };
     }
 
     if (!opts.quiet) {
-      console.log(
-        `[reaper] found ${staleOrders.length} stale PENDING order(s)`
-      );
+      logger.info("Stale PENDING orders found", { count: staleOrders.length });
     }
 
     let released = 0;
@@ -91,7 +86,10 @@ export class ReservationReaperService {
         released++;
       } catch (err) {
         await session.abortTransaction();
-        console.error(`[reaper] failed to release order ${order._id}:`, err);
+        logger.error("Failed to release stale order", {
+          orderId: order._id.toString(),
+          error: err instanceof Error ? err.message : String(err),
+        });
         failed++;
       } finally {
         session.endSession();
@@ -99,9 +97,11 @@ export class ReservationReaperService {
     }
 
     if (!opts.quiet) {
-      console.log(
-        `[reaper] done: released=${released} failed=${failed} total=${staleOrders.length}`
-      );
+      logger.info("Reaper run complete", {
+        released,
+        failed,
+        total: staleOrders.length,
+      });
     }
 
     return { scanned: staleOrders.length, released, failed };

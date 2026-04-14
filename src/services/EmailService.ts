@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { logger } from "../utils/logger.js";
 
 export type SendEmailParams = {
   to: string;
@@ -105,9 +106,9 @@ It expires in ${OTP_TTL_MINUTES} minutes. If you did not request this, you can i
         "Email transport is required in production for password reset emails"
       );
     }
-    console.warn(
-      `[EmailService] No email transport configured; password reset OTP for ${to}: ${otp}`
-    );
+    logger.warn("No email transport configured; password reset OTP generated", {
+      to,
+    });
     return;
   }
 
@@ -132,9 +133,9 @@ export async function sendVerificationEmail(
         "Email transport is required in production for verification emails"
       );
     }
-    console.warn(
-      `[EmailService] No email transport configured; verification URL for ${to}: ${verifyUrl}`
-    );
+    logger.warn("No email transport configured; verification URL generated", {
+      to,
+    });
     return;
   }
 

@@ -1,17 +1,9 @@
 import type { Request, Response, NextFunction } from "express";
 import { AppError } from "../utils/AppError.js";
+import { logger } from "../utils/logger.js";
 
 /**
  * Global Error Handler Middleware
- *
- * This MUST be registered LAST in your Express app (after all routes).
- * It catches every error that bubbles up from asyncHandler or next(err).
- *
- * - AppError (operational): Returns the structured error with its status code.
- * - Unknown Error (bug):    Logs the full error, returns a generic 500.
- *
- * Usage in app setup:
- *   app.use(errorHandler);
  */
 
 // Mongoose validation error shape
@@ -46,7 +38,7 @@ export const errorHandler = (
   res: Response,
   _next: NextFunction
 ): void => {
-  // ── 1. Our own AppError (expected, operational) ──
+  // ── 1. Our own AppError
   if (err instanceof AppError) {
     res.status(err.statusCode).json({
       success: false,
@@ -81,7 +73,11 @@ export const errorHandler = (
     return;
   }
 
-  console.error("[UNEXPECTED ERROR]", err);
+  logger.error("Unexpected error", {
+    name: err.name,
+    message: err.message,
+    stack: err.stack,
+  });
   res.status(500).json({
     success: false,
     code: "INTERNAL_ERROR",
