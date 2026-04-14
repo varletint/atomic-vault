@@ -728,34 +728,41 @@ export class OrderService {
   static async verifyPayment(
     reference: string
   ): Promise<{ order: IOrder; transaction: ITransaction }> {
-    const transaction = await Transaction.findOne({
-      idempotencyKey: reference,
-    });
-    if (!transaction) throw NotFoundError("Transaction");
+    const claimed = await Transaction.findOneAndUpdate(
+      {
+        idempotencyKey: reference,
+        status: { $nin: ["SUCCESS", "FAILED", "VERIFYING"] },
+      },
+      { $set: { status: "VERIFYING" } },
+      { new: true }
+    );
 
-    if (transaction.status === "SUCCESS" || transaction.status === "FAILED") {
-      const order = await Order.findById(transaction.order).lean<IOrder>();
+    if (!claimed) {
+      const existing = await Transaction.findOne({
+        idempotencyKey: reference,
+      });
+      if (!existing) throw NotFoundError("Transaction");
+
+      const order = await Order.findById(existing.order).lean<IOrder>();
       if (!order) throw NotFoundError("Order");
-      return { order, transaction };
+      return { order, transaction: existing };
     }
 
-    const gateway = resolveGateway(transaction.provider);
+    const gateway = resolveGateway(claimed.provider);
     const result = await gateway.verify(reference);
 
     const session = await mongoose.startSession();
     session.startTransaction();
 
     try {
-      const order = await Order.findById(transaction.order).session(session);
+      const order = await Order.findById(claimed.order).session(session);
       if (!order) throw NotFoundError("Order");
 
       if (result.success) {
-        transaction.status = "SUCCESS";
-        transaction.paidAt = result.paidAt
-          ? new Date(result.paidAt)
-          : new Date();
-        if (result.metadata) transaction.metadata = result.metadata;
-        await transaction.save({ session });
+        claimed.status = "SUCCESS";
+        claimed.paidAt = result.paidAt ? new Date(result.paidAt) : new Date();
+        if (result.metadata) claimed.metadata = result.metadata;
+        await claimed.save({ session });
 
         for (const item of order.items) {
           await InventoryService.commitReservation(
@@ -788,18 +795,18 @@ export class OrderService {
             dedupeKey: `order:${order._id.toString()}:confirmed`,
             payload: {
               orderId: order._id.toString(),
-              transactionId: transaction._id.toString(),
+              transactionId: claimed._id.toString(),
               paymentReference: reference,
             },
           },
           session
         );
       } else {
-        transaction.status = "FAILED";
-        transaction.failureReason =
+        claimed.status = "FAILED";
+        claimed.failureReason =
           result.failureReason ?? "Payment declined by provider.";
-        if (result.metadata) transaction.metadata = result.metadata;
-        await transaction.save({ session });
+        if (result.metadata) claimed.metadata = result.metadata;
+        await claimed.save({ session });
 
         for (const item of order.items) {
           await InventoryService.releaseReservation(
@@ -810,7 +817,7 @@ export class OrderService {
         }
 
         order.status = "FAILED";
-        const failureNote = transaction.failureReason || "Payment failed";
+        const failureNote = claimed.failureReason || "Payment failed";
         order.statusHistory.push({
           status: "FAILED",
           timestamp: new Date(),
@@ -831,10 +838,14 @@ export class OrderService {
 
       return {
         order: order.toObject() as IOrder,
-        transaction: transaction.toObject() as ITransaction,
+        transaction: claimed.toObject() as ITransaction,
       };
     } catch (error) {
       await session.abortTransaction();
+      await Transaction.updateOne(
+        { _id: claimed._id, status: "VERIFYING" },
+        { $set: { status: "PROCESSING" } }
+      );
       throw error;
     } finally {
       session.endSession();
