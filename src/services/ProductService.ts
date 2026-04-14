@@ -137,8 +137,6 @@ export interface UpdateProductInput {
   seo?: IProductSeo | undefined;
 }
 
-/*   Service */
-
 export class ProductService {
   static async createProduct(
     data: CreateProductInput
@@ -278,7 +276,7 @@ export class ProductService {
     return product;
   }
 
-  /* ── Deactivate / Reactivate ────────────── */
+  /*  Deactivate / Reactivate  */
 
   static async deactivateProduct(productId: string): Promise<IProduct> {
     const product = await Product.findById(productId);
@@ -312,7 +310,7 @@ export class ProductService {
     return product;
   }
 
-  /* ── Read ───────────────────────────────── */
+  /*  Read */
 
   static async getProductById(
     productId: string
@@ -362,7 +360,6 @@ export class ProductService {
       sortOrder = "desc",
     } = filters;
 
-    // Build query
     const query: Record<string, unknown> = { isActive };
 
     if (category) query.category = category;
@@ -381,7 +378,6 @@ export class ProductService {
       query.$text = { $search: search };
     }
 
-    // Execute count + find in parallel
     const skip = (page - 1) * limit;
     const sort: Record<string, 1 | -1> = {
       [sortBy]: sortOrder === "asc" ? 1 : -1,
@@ -392,13 +388,11 @@ export class ProductService {
       Product.countDocuments(query),
     ]);
 
-    // Fetch inventory for all returned products in one query
     const productIds = products.map((p) => p._id);
     const inventories = await Inventory.find({
       product: { $in: productIds },
     }).lean<IInventory[]>();
 
-    // Aggregate stock per product (sum across variants)
     const stockMap = new Map<string, { stock: number; reserved: number }>();
     for (const inv of inventories) {
       const key = inv.product.toString();
@@ -408,7 +402,6 @@ export class ProductService {
       stockMap.set(key, existing);
     }
 
-    // Merge product + stock data
     const merged = products.map((p) => {
       const agg = stockMap.get(p._id.toString()) ?? {
         stock: 0,
@@ -433,8 +426,6 @@ export class ProductService {
   static async getBrands(): Promise<string[]> {
     return Product.distinct("brand", { isActive: true, brand: { $ne: null } });
   }
-
-  /* ── Helpers ────────────────────────────── */
 
   /**
    * Aggregate total stock across all variants for a single product.
