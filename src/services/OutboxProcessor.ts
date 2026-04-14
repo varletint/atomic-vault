@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { OutboxEvent, type IOutboxEvent } from "../models/index.js";
 import { OrderNotificationService } from "./OrderNotificationService.js";
+import { logger } from "../utils/logger.js";
 
 type ProcessOptions = {
   batchSize?: number;
@@ -14,10 +15,9 @@ function backoffMs(attempts: number): number {
 }
 
 export class OutboxProcessor {
- 
   static scheduleDrain(): void {
     void this.drainOnce().catch((err) =>
-      console.error("Instant outbox drain failed:", err)
+      logger.error("Instant outbox drain failed", { error: String(err) })
     );
   }
 
@@ -154,9 +154,12 @@ export class OutboxProcessor {
         available?: number;
         threshold?: number;
       };
-      console.warn(
-        `[inventory] LOW STOCK: product=${inv.productId} stock=${inv.stock} available=${inv.available} threshold=${inv.threshold}`
-      );
+      logger.warn("Low stock alert", {
+        productId: inv.productId,
+        stock: inv.stock,
+        available: inv.available,
+        threshold: inv.threshold,
+      });
       return;
     }
 

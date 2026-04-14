@@ -12,6 +12,7 @@ import { errorHandler } from "./middleware/errorHandler.js";
 import { ogBotMiddleware } from "./middleware/ogBotMiddleware.js";
 import { OrderController } from "./controllers/OrderController.js";
 import { ReservationReaperService } from "./services/ReservationReaperService.js";
+import { logger } from "./utils/logger.js";
 
 import {
   userRoutes,
@@ -45,10 +46,10 @@ async function connectToDatabase() {
     });
 
     cachedDb = db;
-    console.log("MongoDB connected successfully");
+    logger.info("MongoDB connected successfully");
     return db;
   } catch (error) {
-    console.error(" MongoDB connection error:", error);
+    logger.error("MongoDB connection error", { error: String(error) });
     cachedDb = null;
     throw error;
   }
@@ -137,25 +138,23 @@ if (process.env.NODE_ENV !== "production") {
         const intervalMs = Number.isFinite(raw) && raw > 0 ? raw : 60_000;
         setInterval(() => {
           void ReservationReaperService.runOnce({ quiet: true }).catch((err) =>
-            console.error("[reaper] interval run failed:", err)
+            logger.error("Reaper interval run failed", { error: String(err) })
           );
         }, intervalMs);
       }
 
       app.listen(PORT, () => {
-        console.log(` Server running on port ${PORT}`);
-        console.log(` Environment: ${process.env.NODE_ENV || "development"}`);
-        console.log(
-          ` CORS: ${
+        logger.info(`Server running on port ${PORT}`, {
+          env: process.env.NODE_ENV || "development",
+          cors:
             process.env.NODE_ENV !== "production"
-              ? "Development (all origins)"
-              : "Production (restricted)"
-          }`
-        );
+              ? "development (all origins)"
+              : "production (restricted)",
+        });
       });
     })
     .catch((error) => {
-      console.error("Failed to start server:", error);
+      logger.error("Failed to start server", { error: String(error) });
       process.exit(1);
     });
 }

@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { connectToDatabase } from "../index.js";
 import { OutboxProcessor } from "../services/OutboxProcessor.js";
+import { logger } from "../utils/logger.js";
 
 async function main() {
   await connectToDatabase();
@@ -9,11 +10,14 @@ async function main() {
       ? Number(process.env.OUTBOX_BATCH_SIZE)
       : 25,
   });
-  console.log(`[outbox] processed=${result.processed} ok=${result.succeeded} failed=${result.failed}`);
+  logger.info("Outbox drain complete", {
+    processed: result.processed,
+    succeeded: result.succeeded,
+    failed: result.failed,
+  });
 }
 
 main().catch((err) => {
-  console.error("[outbox] fatal", err);
+  logger.error("Outbox drain fatal", { error: String(err) });
   process.exitCode = 1;
 });
-

@@ -25,6 +25,7 @@ import {
   ForbiddenError,
   ValidationError,
 } from "../utils/AppError.js";
+import { logger } from "../utils/logger.js";
 
 export interface AuthTokens {
   accessToken: string;
@@ -145,16 +146,19 @@ export class UserService {
           user!._id.toString()
         );
         const verifyUrl = `${CLIENT_URL}/verify-email?token=${verifyToken}`;
-        console.log(
-          `[UserService] Sending verification email to ${data.email}…`
-        );
+        logger.debug("Sending verification email", {
+          userId: user!._id.toString(),
+        });
         await sendVerificationEmail(data.email, verifyUrl);
-        console.log(`[UserService] Verification email sent to ${data.email}`);
+        logger.info("Verification email sent", {
+          userId: user!._id.toString(),
+        });
       } catch (emailErr) {
-        console.error(
-          `[UserService] FAILED to send verification email to ${data.email}:`,
-          emailErr
-        );
+        logger.error("Failed to send verification email", {
+          userId: user!._id.toString(),
+          error:
+            emailErr instanceof Error ? emailErr.message : String(emailErr),
+        });
       }
 
       const { password: removedPassword, ...safeUser } =
@@ -563,7 +567,9 @@ export class UserService {
   }
 
   static async resendVerificationEmail(email: string): Promise<void> {
-    console.log("Resending verification email for:", email);
+    logger.debug("Resending verification email", {
+      userId: "(lookup by email)",
+    });
     const normalizedEmail = email.toLowerCase().trim();
 
     const user = await User.findOne({ email: normalizedEmail }).select(

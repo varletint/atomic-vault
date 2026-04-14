@@ -2,9 +2,11 @@ const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY ?? "";
 const PAYSTACK_WEBHOOK_SECRET = process.env.PAYSTACK_WEBHOOK_SECRET ?? "";
 const PAYSTACK_BASE_URL = "https://api.paystack.co";
 
+import { logger } from "../utils/logger.js";
+
 if (!PAYSTACK_SECRET_KEY) {
-  console.warn(
-    "[paystack] PAYSTACK_SECRET_KEY is not set. Payment initialization will fail."
+  logger.warn(
+    "PAYSTACK_SECRET_KEY is not set. Payment initialization will fail."
   );
 }
 

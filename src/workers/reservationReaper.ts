@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { connectToDatabase } from "../index.js";
 import { ReservationReaperService } from "../services/ReservationReaperService.js";
+import { logger } from "../utils/logger.js";
 
 async function main() {
   await connectToDatabase();
@@ -8,6 +9,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("[reaper] fatal", err);
+  logger.error("Reaper fatal", { error: String(err) });
   process.exitCode = 1;
 });

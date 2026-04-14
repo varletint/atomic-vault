@@ -1,6 +1,7 @@
 import "dotenv/config";
 import mongoose from "mongoose";
 import { OutboxEvent } from "../models/index.js";
+import { logger } from "../utils/logger.js";
 
 const MONGODB_URI =
   process.env.MONGODB_URI || "mongodb://localhost:27017/order-system";
@@ -16,25 +17,24 @@ async function main() {
     connectTimeoutMS: 10000,
     socketTimeoutMS: 45000,
   });
-  console.log("MongoDB connected successfully");
+  logger.info("MongoDB connected successfully");
 
   const clearAll =
     process.env.OUTBOX_CLEAR_ALL === "1" ||
     process.env.OUTBOX_CLEAR_ALL === "true";
 
-  const filter = clearAll
-    ? {}
-    : { status: { $in: ["PENDING", "PROCESSING"] } };
+  const filter = clearAll ? {} : { status: { $in: ["PENDING", "PROCESSING"] } };
 
   const result = await OutboxEvent.deleteMany(filter);
-  console.log(
-    `[outbox:clear] deleted=${result.deletedCount} filter=${clearAll ? "ALL" : "PENDING+PROCESSING"}`
-  );
+  logger.info("Outbox clear complete", {
+    deleted: result.deletedCount,
+    filter: clearAll ? "ALL" : "PENDING+PROCESSING",
+  });
 
   await mongoose.disconnect();
 }
 
 main().catch((err) => {
-  console.error("[outbox:clear] fatal", err);
+  logger.error("Outbox clear fatal", { error: String(err) });
   process.exitCode = 1;
 });
