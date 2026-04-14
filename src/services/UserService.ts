@@ -26,24 +26,6 @@ import {
   ValidationError,
 } from "../utils/AppError.js";
 
-/**
- * UserService
- *
- * All user lifecycle operations live here.
- * Uses a strict Finite State Machine (FSM) to govern account status
- * transitions, and MongoDB sessions for ACID compliance.
- *
- * FSM Transition Map:
- *   UNVERIFIED  → ACTIVE, DEACTIVATED
- *   ACTIVE      → SUSPENDED, DEACTIVATED
- *   SUSPENDED   → ACTIVE, DEACTIVATED
- *   DEACTIVATED → (terminal – no transitions allowed)
- */
-
-// ─────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────
-
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
@@ -54,10 +36,6 @@ export interface AuthResponse {
   tokens: AuthTokens;
 }
 
-// ─────────────────────────────────────────────────
-// FSM Definition
-// ─────────────────────────────────────────────────
-
 const ALLOWED_TRANSITIONS: Record<UserStatus, UserStatus[]> = {
   UNVERIFIED: ["ACTIVE", "DEACTIVATED"],
   ACTIVE: ["SUSPENDED", "DEACTIVATED"],
@@ -65,10 +43,6 @@ const ALLOWED_TRANSITIONS: Record<UserStatus, UserStatus[]> = {
   DEACTIVATED: [], // terminal state
 };
 
-/**
- * Validates whether a status transition is legal.
- * Throws a structured AppError (409 FSM_VIOLATION) if not.
- */
 function assertValidTransition(current: UserStatus, next: UserStatus): void {
   const allowed = ALLOWED_TRANSITIONS[current];
 
@@ -77,13 +51,10 @@ function assertValidTransition(current: UserStatus, next: UserStatus): void {
   }
 }
 
-/** Max failed password attempts before lockout (env: AUTH_MAX_FAILED_LOGINS, default 5) */
 const MAX_FAILED_LOGIN_ATTEMPTS = Math.max(
   1,
   parseInt(process.env.AUTH_MAX_FAILED_LOGINS ?? "5", 10) || 5
 );
-
-/** Lockout duration in minutes after threshold (env: AUTH_LOCKOUT_MINUTES, default 15) */
 const LOCKOUT_MINUTES = Math.max(
   1,
   parseInt(process.env.AUTH_LOCKOUT_MINUTES ?? "15", 10) || 15
@@ -91,25 +62,19 @@ const LOCKOUT_MINUTES = Math.max(
 
 const LOCKOUT_MS = LOCKOUT_MINUTES * 60 * 1000;
 
-/** Base URL of the frontend app for verification links */
 const CLIENT_URL = (process.env.CLIENT_URL ?? "http://localhost:5173").replace(
   /\/$/,
   ""
 );
-
-/** OTP validity window (minutes). Env: PASSWORD_RESET_OTP_TTL_MINUTES, default 15, min 5 */
 const PASSWORD_RESET_OTP_TTL_MINUTES = Math.max(
   5,
   parseInt(process.env.PASSWORD_RESET_OTP_TTL_MINUTES ?? "15", 10) || 15
 );
-
-/** Max wrong OTP attempts per challenge before requiring a new code */
 const PASSWORD_RESET_MAX_OTP_ATTEMPTS = Math.max(
   3,
   parseInt(process.env.PASSWORD_RESET_MAX_OTP_ATTEMPTS ?? "5", 10) || 5
 );
 
-/** Max reset emails per user per rolling hour (abuse throttle) */
 const PASSWORD_RESET_EMAIL_MAX_PER_HOUR = Math.max(
   1,
   parseInt(process.env.PASSWORD_RESET_EMAIL_MAX_PER_HOUR ?? "3", 10) || 3
@@ -131,22 +96,7 @@ function bumpTokenVersion(user: IUser): void {
   (user as mongoose.Document).markModified("auth");
 }
 
-// ─────────────────────────────────────────────────
-// Service
-// ─────────────────────────────────────────────────
-
 export class UserService {
-  // ─────────────────────────────────────────────────
-  // Registration
-  // ─────────────────────────────────────────────────
-
-  /**
-   * Creates a new user account and issues a token pair.
-   * Initial status is always UNVERIFIED (enforced by FSM).
-   *
-   * @param data - User registration payload (name, email, raw password, address).
-   * @returns The created user document + JWT tokens.
-   */
   static async register(data: {
     name: string;
     email: string;
@@ -157,7 +107,6 @@ export class UserService {
     session.startTransaction();
 
     try {
-      // Check for duplicate email within the transaction
       const existing = await User.findOne({ email: data.email }).session(
         session
       );
@@ -165,7 +114,6 @@ export class UserService {
         throw DuplicateError("email");
       }
 
-      // Hash password with bcrypt before saving (cost factor 12)
       const salt = await bcrypt.genSalt(12);
       const hashedPassword = await bcrypt.hash(data.password, salt);
 
@@ -192,7 +140,6 @@ export class UserService {
 
       await session.commitTransaction();
 
-      // Send verification email (don't block registration on failure)
       try {
         const verifyToken = generateEmailVerificationToken(
           user!._id.toString()
@@ -210,7 +157,6 @@ export class UserService {
         );
       }
 
-      // Strip password before returning
       const { password: removedPassword, ...safeUser } =
         user!.toObject() as IUser & { password?: string };
       void removedPassword;
@@ -235,18 +181,6 @@ export class UserService {
     }
   }
 
-  // ─────────────────────────────────────────────────
-  // Authentication
-  // ─────────────────────────────────────────────────
-
-  /**
-   * Authenticates a user by email and password.
-   * Only ACTIVE or SUSPENDED users may log in (UNVERIFIED and DEACTIVATED cannot).
-   *
-   * @param email - User's email address.
-   * @param password - Raw password to compare.
-   * @returns The user document + JWT tokens.
-   */
   static async login(
     email: string,
     password: string,
@@ -295,7 +229,6 @@ export class UserService {
       throw ValidationError("Invalid email or password.");
     }
 
-    // Only ACTIVE or SUSPENDED users can log in
     if (user.status === "UNVERIFIED") {
       throw new AppError(
         "Please verify your email before logging in.",
@@ -361,11 +294,6 @@ export class UserService {
     return { user: safeUser as IUser, tokens };
   }
 
-  /**
-   * Creates a short-lived OTP challenge and emails the code.
-   * Always completes without error (no email enumeration); skips send for
-   * unknown emails, DEACTIVATED accounts, or when hourly rate limit is hit.
-   */
   static async requestPasswordResetOtp(email: string): Promise<void> {
     const normalizedEmail = email.toLowerCase().trim();
 
@@ -408,10 +336,6 @@ export class UserService {
     await sendPasswordResetOtpEmail(normalizedEmail, otp);
   }
 
-  /**
-   * Verifies the latest unused OTP and sets a new password.
-   * Bumps `auth.tokenVersion` so existing JWTs are invalidated.
-   */
   static async resetPasswordWithOtp(
     email: string,
     otp: string,
@@ -512,12 +436,6 @@ export class UserService {
     }
   }
 
-  /**
-   * Issues a fresh access token using a valid refresh token.
-   *
-   * @param token - The refresh token string.
-   * @returns A new token pair.
-   */
   static async refreshTokens(token: string): Promise<AuthTokens> {
     const decoded = verifyRefreshToken(token);
     const versionInToken = decoded.tokenVersion ?? 0;
@@ -555,15 +473,6 @@ export class UserService {
     await SessionService.revokeByRefreshToken(token, "USER_LOGOUT");
   }
 
-  // ─────────────────────────────────────────────────
-  // FSM Transitions
-  // ─────────────────────────────────────────────────
-
-  /**
-   * Core FSM transition method.
-   * Validates the move, updates status atomically, and logs to statusHistory.
-   * All public transition methods delegate to this.
-   */
   private static async transitionStatus(
     userId: string,
     nextStatus: UserStatus,
@@ -578,10 +487,8 @@ export class UserService {
         throw NotFoundError("User");
       }
 
-      // FSM guard
       assertValidTransition(user.status, nextStatus);
 
-      // Atomic update: set new status + push audit entry
       user.status = nextStatus;
       const historyEntry: any = {
         status: nextStatus,
@@ -608,10 +515,6 @@ export class UserService {
     }
   }
 
-  /**
-   * Verify a user's email → transitions UNVERIFIED → ACTIVE.
-   * Sets `isEmailVerified` to true and issues a token pair.
-   */
   static async verifyEmail(userId: string): Promise<AuthResponse> {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -659,10 +562,6 @@ export class UserService {
     }
   }
 
-  /**
-   * Re-sends the verification email for an unverified user.
-   * Validates the user is still UNVERIFIED before sending.
-   */
   static async resendVerificationEmail(email: string): Promise<void> {
     console.log("Resending verification email for:", email);
     const normalizedEmail = email.toLowerCase().trim();
@@ -671,24 +570,20 @@ export class UserService {
       "_id email status isEmailVerified auth"
     );
 
-    // Silent return for unknown emails (no enumeration)
     if (!user) return;
 
     if (user.isEmailVerified || user.status !== "UNVERIFIED") {
       throw ValidationError("Email is already verified.");
     }
 
-    // DB-level rate limit: enforce 60-second cooldown per user
     const lastSent = user.auth?.lastVerificationEmailSentAt;
     if (lastSent) {
       const elapsed = Date.now() - new Date(lastSent).getTime();
       if (elapsed < 60_000) {
-        // Silently return – the IP-based limiter already sends a proper 429
         return;
       }
     }
 
-    // Record the send timestamp
     if (!user.auth) {
       user.auth = {
         failedLoginAttempts: 0,
@@ -710,60 +605,28 @@ export class UserService {
     await sendVerificationEmail(user.email, verifyUrl);
   }
 
-  /**
-   * Suspend a user → transitions ACTIVE → SUSPENDED.
-   * Suspended users can log in but cannot place orders or transact.
-   */
   static async suspendUser(userId: string, reason: string): Promise<IUser> {
     return UserService.transitionStatus(userId, "SUSPENDED", reason);
   }
 
-  /**
-   * Reactivate a suspended user → transitions SUSPENDED → ACTIVE.
-   */
   static async reactivateUser(userId: string, reason: string): Promise<IUser> {
     return UserService.transitionStatus(userId, "ACTIVE", reason);
   }
 
-  /**
-   * Deactivate a user → terminal state.
-   * Can be reached from UNVERIFIED, ACTIVE, or SUSPENDED.
-   * Data is preserved for ACID audit trails, but the user can no longer log in.
-   */
   static async deactivateUser(userId: string, reason: string): Promise<IUser> {
     return UserService.transitionStatus(userId, "DEACTIVATED", reason);
   }
 
-  // ─────────────────────────────────────────────────
-  // Read Operations
-  // ─────────────────────────────────────────────────
-
-  /**
-   * Get a user by their ID. Excludes the password field.
-   */
   static async getUserById(userId: string): Promise<IUser | null> {
     return User.findById(userId).select("-password").lean<IUser>();
   }
 
-  /**
-   * Get a user by their email. Excludes the password field.
-   * Useful for login flows (caller would need to separately
-   * compare passwords using the auth layer).
-   */
   static async getUserByEmail(email: string): Promise<IUser | null> {
     return User.findOne({ email: email.toLowerCase().trim() })
       .select("-password")
       .lean<IUser>();
   }
 
-  // ─────────────────────────────────────────────────
-  // Profile Update
-  // ─────────────────────────────────────────────────
-
-  /**
-   * Update a user's profile (name and/or address).
-   * Only ACTIVE users may update their profile (FSM enforcement).
-   */
   static async updateProfile(
     userId: string,
     data: { name?: string; address?: IUser["address"] }
@@ -777,7 +640,6 @@ export class UserService {
         throw NotFoundError("User");
       }
 
-      // Only ACTIVE users can modify their profile
       if (user.status !== "ACTIVE") {
         throw ForbiddenError(
           `Profile update denied. User status is "${user.status}". Only ACTIVE users can update their profile.`
