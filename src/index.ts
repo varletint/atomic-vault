@@ -78,6 +78,10 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
 
+// CSRF double-submit cookie protection
+import { csrfProtection } from "./middleware/csrfMiddleware.js";
+app.use(csrfProtection);
+
 // Intercept social-media bot requests and serve pre-rendered OG meta HTML
 app.use(ogBotMiddleware);
 
@@ -130,11 +134,10 @@ if (process.env.NODE_ENV !== "production") {
     .then(() => {
       if (process.env.DISABLE_RESERVATION_REAPER !== "true") {
         const raw = Number(process.env.RESERVATION_REAPER_INTERVAL_MS);
-        const intervalMs =
-          Number.isFinite(raw) && raw > 0 ? raw : 60_000;
+        const intervalMs = Number.isFinite(raw) && raw > 0 ? raw : 60_000;
         setInterval(() => {
-          void ReservationReaperService.runOnce({ quiet: true }).catch(
-            (err) => console.error("[reaper] interval run failed:", err)
+          void ReservationReaperService.runOnce({ quiet: true }).catch((err) =>
+            console.error("[reaper] interval run failed:", err)
           );
         }, intervalMs);
       }

@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
 import { UserController } from "../controllers/index.js";
 import {
   authMiddleware,
@@ -7,6 +7,8 @@ import {
   emailResendLimiter,
   forgotPasswordLimiter,
   resetPasswordLimiter,
+  setCsrfCookie,
+  generateCsrfToken,
 } from "../middleware/index.js";
 import { validate } from "../middleware/validate.js";
 import {
@@ -19,6 +21,11 @@ import {
 } from "../schemas/userSchemas.js";
 
 const router = Router();
+
+router.get("/csrf-token", authMiddleware, (_req: Request, res: Response) => {
+  setCsrfCookie(res, generateCsrfToken());
+  res.json({ success: true });
+});
 
 router.post("/register", validate(registerSchema), UserController.register);
 router.post("/login", validate(loginSchema), UserController.login);
@@ -38,10 +45,8 @@ router.post(
   UserController.resetPassword
 );
 
-// Public: verify email via signed token link
 router.get("/verify-email", UserController.verifyEmailByToken);
 
-// Public: resend verification email (accepts { email } in body)
 router.post(
   "/resend-verification",
   emailResendLimiter,

@@ -7,6 +7,10 @@ import {
   parseExpirationToMs,
   verifyEmailVerificationToken,
 } from "../utils/jwt.js";
+import {
+  setCsrfCookie,
+  generateCsrfToken,
+} from "../middleware/csrfMiddleware.js";
 import type { z } from "zod";
 import type {
   registerSchema,
@@ -39,6 +43,8 @@ function setAuthCookies(
     path: "/api/users/refresh",
     maxAge: parseExpirationToMs(process.env.JWT_REFRESH_EXPIRES_IN || "7d"),
   });
+
+  setCsrfCookie(res, generateCsrfToken());
 }
 
 export class UserController {
@@ -77,7 +83,11 @@ export class UserController {
     const ua = req.get("user-agent");
     if (ua) loginMeta.userAgent = ua;
 
-    const { user, tokens } = await UserService.login(email, password, loginMeta);
+    const { user, tokens } = await UserService.login(
+      email,
+      password,
+      loginMeta
+    );
 
     setAuthCookies(res, tokens);
     await logAudit({
