@@ -1,9 +1,11 @@
 import type { Request, Response, NextFunction } from "express";
 import type { ZodSchema } from "zod";
 
-export function validate(schema: ZodSchema) {
+type ValidationTarget = "body" | "query" | "params";
+
+export function validate(schema: ZodSchema, target: ValidationTarget = "body") {
   return (req: Request, res: Response, next: NextFunction): void => {
-    const result = schema.safeParse(req.body);
+    const result = schema.safeParse(req[target]);
 
     if (!result.success) {
       const errors = result.error.issues.map((issue) => ({
@@ -19,7 +21,7 @@ export function validate(schema: ZodSchema) {
       return;
     }
 
-    req.body = result.data;
+    req[target] = result.data;
     next();
   };
 }

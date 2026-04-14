@@ -380,10 +380,11 @@ export class OrderService {
     const filter: Record<string, unknown> = {};
     if (status) filter.status = status;
     if (search) {
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       filter.$or = [
-        { _id: { $regex: search, $options: "i" } },
-        { "items.productName": { $regex: search, $options: "i" } },
-        { "guestContact.email": { $regex: search, $options: "i" } },
+        { _id: { $regex: escaped, $options: "i" } },
+        { "items.productName": { $regex: escaped, $options: "i" } },
+        { "guestContact.email": { $regex: escaped, $options: "i" } },
       ];
     }
 

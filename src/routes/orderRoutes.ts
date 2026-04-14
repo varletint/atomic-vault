@@ -10,6 +10,8 @@ import {
   reasonSchema,
   noteSchema,
   addTrackingEventSchema,
+  adminOrderQuerySchema,
+  guestOrderQuerySchema,
 } from "../schemas/orderSchemas.js";
 
 const router = Router();
@@ -19,13 +21,18 @@ router.post(
   validate(createGuestOrderSchema),
   OrderController.createGuestOrder
 );
-router.get("/guest/:orderId", OrderController.getGuestOrder);
+router.get(
+  "/guest/:orderId",
+  validate(guestOrderQuerySchema, "query"),
+  OrderController.getGuestOrder
+);
 
 /* ── Admin-only routes ── */
 router.get(
   "/admin",
   authMiddleware,
   requireRole("ADMIN"),
+  validate(adminOrderQuerySchema, "query"),
   OrderController.getAllOrders
 );
 

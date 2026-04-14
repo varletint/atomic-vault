@@ -74,3 +74,23 @@ export const addTrackingEventSchema = z.object({
   description: z.string().min(1, "Description is required"),
   location: z.string().optional(),
 });
+
+export const adminOrderQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  status: z
+    .enum([
+      "PENDING",
+      "CONFIRMED",
+      "SHIPPED",
+      "DELIVERED",
+      "CANCELLED",
+      "FAILED",
+    ])
+    .optional(),
+  search: z.string().max(200).optional(),
+});
+
+export const guestOrderQuerySchema = z.object({
+  email: z.string().email("A valid email is required"),
+});
