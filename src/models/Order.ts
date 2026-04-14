@@ -42,15 +42,15 @@ export interface IGuestContact {
 
 export interface IOrderItem {
   product: Types.ObjectId;
-  variant?: Types.ObjectId; 
-  variantLabel?: string; 
-  productName: string;  
-  productSku?: string; 
-  productImage?: string; 
-  productSlug?: string; 
+  variant?: Types.ObjectId;
+  variantLabel?: string;
+  productName: string;
+  productSku?: string;
+  productImage?: string;
+  productSlug?: string;
   quantity: number;
-  pricePerUnit: number; 
-  subtotal: number; 
+  pricePerUnit: number;
+  subtotal: number;
 }
 
 export interface IOrder extends Document {
@@ -69,7 +69,7 @@ export interface IOrder extends Document {
     paidAt?: Date;
   };
   status: OrderStatus;
-  idempotencyKey: string; 
+  idempotencyKey: string;
   shippingAddress: {
     street: string;
     city: string;
@@ -111,8 +111,19 @@ const orderItemSchema = new Schema<IOrderItem>(
       type: Number,
       required: true,
       min: [0, "Price cannot be negative"],
+      validate: {
+        validator: Number.isInteger,
+        message: "Price per unit must be an integer (kobo)",
+      },
     },
-    subtotal: { type: Number, required: true },
+    subtotal: {
+      type: Number,
+      required: true,
+      validate: {
+        validator: Number.isInteger,
+        message: "Subtotal must be an integer (kobo)",
+      },
+    },
   },
   { _id: false }
 );
@@ -191,17 +202,41 @@ const orderSchema = new Schema<IOrder>(
       type: Number,
       required: true,
       min: [0, "Total cannot be negative"],
+      validate: {
+        validator: Number.isInteger,
+        message: "Total amount must be an integer (kobo)",
+      },
     },
     deliveryFee: {
       type: Number,
       default: 0,
       min: [0, "Delivery fee cannot be negative"],
+      validate: {
+        validator: Number.isInteger,
+        message: "Delivery fee must be an integer (kobo)",
+      },
     },
     payment: {
       provider: { type: String },
       reference: { type: String },
-      amountPaid: { type: Number, min: [0, "Amount paid cannot be negative"] },
-      gatewayFee: { type: Number, min: [0, "Gateway fee cannot be negative"] },
+      amountPaid: {
+        type: Number,
+        min: [0, "Amount paid cannot be negative"],
+        validate: {
+          validator: (v: number | undefined) =>
+            v === undefined || Number.isInteger(v),
+          message: "Amount paid must be an integer (kobo)",
+        },
+      },
+      gatewayFee: {
+        type: Number,
+        min: [0, "Gateway fee cannot be negative"],
+        validate: {
+          validator: (v: number | undefined) =>
+            v === undefined || Number.isInteger(v),
+          message: "Gateway fee must be an integer (kobo)",
+        },
+      },
       paidAt: { type: Date },
     },
     status: {
@@ -241,9 +276,9 @@ orderSchema.virtual("netAmount").get(function netAmount() {
   return Math.max(0, amountPaid - gatewayFee);
 });
 
-orderSchema.index({ user: 1, createdAt: -1 }); 
-orderSchema.index({ status: 1 }); 
-orderSchema.index({ idempotencyKey: 1 }, { unique: true }); 
+orderSchema.index({ user: 1, createdAt: -1 });
+orderSchema.index({ status: 1 });
+orderSchema.index({ idempotencyKey: 1 }, { unique: true });
 orderSchema.index({ checkoutType: 1, createdAt: -1 });
 orderSchema.index({ "guestContact.email": 1, createdAt: -1 }, { sparse: true });
 

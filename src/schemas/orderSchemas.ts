@@ -37,7 +37,12 @@ export const createGuestOrderSchema = z.object({
   shippingAddress: shippingAddressSchema,
   guestContact: guestContactSchema,
   items: z.array(lineItemSchema).min(1, "At least one item is required"),
-  deliveryFee: z.number().min(0, "Delivery fee cannot be negative").optional(),
+  deliveryFee: z
+    .number()
+    .int("Delivery fee must be an integer (kobo)")
+    .min(0, "Delivery fee cannot be negative")
+    .max(10_000_000_000)
+    .optional(),
 });
 
 export const processPaymentSchema = z.object({

@@ -1,28 +1,5 @@
 import mongoose, { Schema, type Document, type Types } from "mongoose";
 
-/**
- * Transaction Model
- * Tracks every payment attempt and its outcome for an order.
- *
- * Why separate from Order?
- * - An order may have MULTIPLE transactions (failed first attempt, retry, refund).
- * - Keeps payment concerns isolated from order lifecycle.
- * - Makes refund/audit trails trivial to query.
- *
- * Flow:
- *   INITIATED → PROCESSING → SUCCESS
- *                    ↓
- *                 FAILED
- *
- *   SUCCESS → REFUND_INITIATED → REFUNDED
- *
- * `providerRef` stores the external payment gateway's transaction ID
- * (e.g., Paystack reference, Flutterwave tx_ref) so you can reconcile.
- *
- * `idempotencyKey` ensures the same payment is never charged twice
- * even if your server retries the request to the payment provider.
- */
-
 export type TransactionStatus =
   | "INITIATED"
   | "PROCESSING"
@@ -76,6 +53,10 @@ const transactionSchema = new Schema<ITransaction>(
       type: Number,
       required: true,
       min: [1, "Amount must be at least 1 kobo"],
+      validate: {
+        validator: Number.isInteger,
+        message: "Amount must be an integer (kobo)",
+      },
     },
     currency: {
       type: String,

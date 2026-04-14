@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+/** ₦100 million in kobo — upper sanity bound for any single price field. */
+const MAX_KOBO = 10_000_000_000;
+
 const productImageSchema = z.object({
   url: z.string().url("Invalid image URL"),
   altText: z.string().optional(),
@@ -16,9 +19,23 @@ const variantSchema = z.object({
   variantOptions: z
     .array(variantOptionSchema)
     .min(1, "Variant must have at least one option"),
-  price: z.number().min(0, "Price cannot be negative"),
-  compareAtPrice: z.number().min(0).optional(),
-  costPrice: z.number().min(0).optional(),
+  price: z
+    .number()
+    .int("Price must be an integer (kobo)")
+    .min(0, "Price cannot be negative")
+    .max(MAX_KOBO),
+  compareAtPrice: z
+    .number()
+    .int("Must be an integer (kobo)")
+    .min(0)
+    .max(MAX_KOBO)
+    .optional(),
+  costPrice: z
+    .number()
+    .int("Must be an integer (kobo)")
+    .min(0)
+    .max(MAX_KOBO)
+    .optional(),
   weight: z.number().min(0).optional(),
   images: z.array(productImageSchema).optional(),
   isActive: z.boolean().default(true),
@@ -43,12 +60,26 @@ export const createProductSchema = z
   .object({
     name: z.string().min(1, "Name is required"),
     description: z.string().min(1, "Description is required"),
-    price: z.number().min(0, "Price cannot be negative"),
+    price: z
+      .number()
+      .int("Price must be an integer (kobo)")
+      .min(0, "Price cannot be negative")
+      .max(MAX_KOBO),
     category: z.string().min(1, "Category is required"),
 
     shortDescription: z.string().optional(),
-    compareAtPrice: z.number().min(0).optional(),
-    costPrice: z.number().min(0).optional(),
+    compareAtPrice: z
+      .number()
+      .int("Must be an integer (kobo)")
+      .min(0)
+      .max(MAX_KOBO)
+      .optional(),
+    costPrice: z
+      .number()
+      .int("Must be an integer (kobo)")
+      .min(0)
+      .max(MAX_KOBO)
+      .optional(),
     brand: z.string().optional(),
     tags: z.array(z.string()).default([]),
     productType: z.enum(["physical", "digital", "service"]).default("physical"),
@@ -96,9 +127,24 @@ export const updateProductSchema = z
     name: z.string().min(1).optional(),
     shortDescription: z.string().optional(),
     description: z.string().min(1).optional(),
-    price: z.number().min(0).optional(),
-    compareAtPrice: z.number().min(0).optional(),
-    costPrice: z.number().min(0).optional(),
+    price: z
+      .number()
+      .int("Price must be an integer (kobo)")
+      .min(0)
+      .max(MAX_KOBO)
+      .optional(),
+    compareAtPrice: z
+      .number()
+      .int("Must be an integer (kobo)")
+      .min(0)
+      .max(MAX_KOBO)
+      .optional(),
+    costPrice: z
+      .number()
+      .int("Must be an integer (kobo)")
+      .min(0)
+      .max(MAX_KOBO)
+      .optional(),
     category: z.string().min(1).optional(),
     brand: z.string().optional(),
     tags: z.array(z.string()).optional(),

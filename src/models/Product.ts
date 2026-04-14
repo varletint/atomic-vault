@@ -113,14 +113,28 @@ const productVariantSchema = new Schema<IProductVariant>({
     type: Number,
     required: true,
     min: [0, "Variant price cannot be negative"],
+    validate: {
+      validator: Number.isInteger,
+      message: "Variant price must be an integer (kobo)",
+    },
   },
   compareAtPrice: {
     type: Number,
     min: [0, "Compare-at price cannot be negative"],
+    validate: {
+      validator: (v: number | undefined) =>
+        v === undefined || Number.isInteger(v),
+      message: "Compare-at price must be an integer (kobo)",
+    },
   },
   costPrice: {
     type: Number,
     min: [0, "Cost price cannot be negative"],
+    validate: {
+      validator: (v: number | undefined) =>
+        v === undefined || Number.isInteger(v),
+      message: "Cost price must be an integer (kobo)",
+    },
   },
   weight: {
     type: Number,
@@ -172,14 +186,28 @@ const productSchema = new Schema<IProduct>(
       type: Number,
       required: true,
       min: [0, "Price cannot be negative"],
+      validate: {
+        validator: Number.isInteger,
+        message: "Price must be an integer (kobo)",
+      },
     },
     compareAtPrice: {
       type: Number,
       min: [0, "Compare-at price cannot be negative"],
+      validate: {
+        validator: (v: number | undefined) =>
+          v === undefined || Number.isInteger(v),
+        message: "Compare-at price must be an integer (kobo)",
+      },
     },
     costPrice: {
       type: Number,
       min: [0, "Cost price cannot be negative"],
+      validate: {
+        validator: (v: number | undefined) =>
+          v === undefined || Number.isInteger(v),
+        message: "Cost price must be an integer (kobo)",
+      },
     },
     category: { type: String, required: true, trim: true },
     brand: { type: String, trim: true },
