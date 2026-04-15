@@ -17,6 +17,7 @@ const CSRF_EXEMPT_PATHS = new Set([
   "/api/users/resend-verification",
   "/api/users/refresh",
   "/api/users/logout",
+  "/api/users/orders",
 ]);
 
 export function generateCsrfToken(): string {
