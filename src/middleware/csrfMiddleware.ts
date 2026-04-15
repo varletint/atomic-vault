@@ -8,7 +8,16 @@ const CSRF_COOKIE = "csrf-token";
 const CSRF_HEADER = "x-csrf-token";
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
-const CSRF_EXEMPT_PATHS = new Set(["/api/orders/webhook/paystack"]);
+const CSRF_EXEMPT_PATHS = new Set([
+  "/api/orders/webhook/paystack",
+  "/api/users/register",
+  "/api/users/login",
+  "/api/users/forgot-password",
+  "/api/users/reset-password",
+  "/api/users/resend-verification",
+  "/api/users/refresh",
+  "/api/users/logout",
+]);
 
 export function generateCsrfToken(): string {
   return randomBytes(32).toString("hex");
