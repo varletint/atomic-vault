@@ -9,6 +9,14 @@ export type TransactionStatus =
   | "REFUND_INITIATED"
   | "REFUNDED";
 
+export type TransactionType =
+  | "ORDER_PAYMENT"
+  | "REFUND"
+  | "PAYOUT"
+  | "TRANSFER"
+  | "ADJUSTMENT"
+  | "REVERSAL";
+
 export type PaymentMethod =
   | "CARD"
   | "BANK_TRANSFER"
@@ -19,17 +27,21 @@ export type PaymentMethod =
 
 export interface ITransaction extends Document {
   _id: Types.ObjectId;
+  type: TransactionType;
   order: Types.ObjectId;
   /** Absent for guest checkout orders */
   user?: Types.ObjectId | null;
-  amount: number; // in kobo
+  amount: number; 
   currency: string;
   status: TransactionStatus;
   paymentMethod: PaymentMethod;
-  provider: string; // e.g., "paystack", "flutterwave"
-  providerRef?: string; // external reference from payment gateway
+  provider: string; 
+  providerRef?: string; 
+  gatewayFee?: number; 
+  
+  postedAt?: Date;
   idempotencyKey: string;
-  metadata?: Record<string, unknown>; // flexible store for gateway response data
+  metadata?: Record<string, unknown>; 
   failureReason?: string;
   paidAt?: Date;
   refundedAt?: Date;
@@ -39,6 +51,19 @@ export interface ITransaction extends Document {
 
 const transactionSchema = new Schema<ITransaction>(
   {
+    type: {
+      type: String,
+      enum: [
+        "ORDER_PAYMENT",
+        "REFUND",
+        "PAYOUT",
+        "TRANSFER",
+        "ADJUSTMENT",
+        "REVERSAL",
+      ],
+      default: "ORDER_PAYMENT",
+      required: true,
+    },
     order: {
       type: Schema.Types.ObjectId,
       ref: "Order",
@@ -99,6 +124,16 @@ const transactionSchema = new Schema<ITransaction>(
       lowercase: true,
     },
     providerRef: { type: String, sparse: true },
+    gatewayFee: {
+      type: Number,
+      min: [0, "Gateway fee cannot be negative"],
+      validate: {
+        validator: (v: unknown) =>
+          v === undefined || (typeof v === "number" && Number.isInteger(v)),
+        message: "Gateway fee must be an integer (kobo)",
+      },
+    },
+    postedAt: { type: Date },
     idempotencyKey: {
       type: String,
       required: true,
@@ -114,12 +149,13 @@ const transactionSchema = new Schema<ITransaction>(
   }
 );
 
-// Query indexes
-transactionSchema.index({ order: 1 }); // all transactions for an order
-transactionSchema.index({ user: 1, createdAt: -1 }); // user's payment history
-transactionSchema.index({ status: 1 }); // find pending/failed transactions
-transactionSchema.index({ providerRef: 1 }, { sparse: true }); // webhook reconciliation
-transactionSchema.index({ idempotencyKey: 1 }, { unique: true }); // prevent duplicate charges
+transactionSchema.index({ order: 1 }); 
+transactionSchema.index({ user: 1, createdAt: -1 }); 
+transactionSchema.index({ status: 1 }); 
+transactionSchema.index({ providerRef: 1 }, { sparse: true }); 
+transactionSchema.index({ idempotencyKey: 1 }, { unique: true }); 
+transactionSchema.index({ type: 1, createdAt: -1 });
+transactionSchema.index({ postedAt: -1 }, { sparse: true });
 
 export const Transaction = mongoose.model<ITransaction>(
   "Transaction",
