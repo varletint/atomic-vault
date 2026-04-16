@@ -36,8 +36,30 @@ export {
   Transaction,
   type ITransaction,
   type TransactionStatus,
+  type TransactionType,
   type PaymentMethod,
 } from "./Transaction.js";
+export {
+  TransactionEvent,
+  type ITransactionEvent,
+  type ActorType as TransactionActorType,
+  type IActorRef as ITransactionActorRef,
+} from "./TransactionEvent.js";
+export {
+  Wallet,
+  type IWallet,
+  type WalletOwnerType,
+  type WalletStatus,
+} from "./Wallet.js";
+export {
+  LedgerEntry,
+  type ILedgerEntry,
+  type LedgerBucket,
+  type LedgerDirection,
+  type LedgerEntryType,
+  type ActorType as LedgerActorType,
+  type IActorRef as ILedgerActorRef,
+} from "./LedgerEntry.js";
 export { TrackingEvent, type ITrackingEvent } from "./TrackingEvent.js";
 export {
   OutboxEvent,
