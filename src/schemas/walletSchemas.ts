@@ -15,3 +15,6 @@ export const walletLedgerQuerySchema = z.object({
   to: z.coerce.date().optional(),
 });
 
+export const repairBodySchema = z.object({
+  dryRun: z.boolean().optional().default(false),
+});
