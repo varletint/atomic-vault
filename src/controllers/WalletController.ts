@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../middleware/asyncHandler.js";
+import mongoose from "mongoose";
 import { LedgerEntry, Wallet, type ILedgerEntry } from "../models/index.js";
 import { NotFoundError, ValidationError } from "../utils/AppError.js";
 import { WalletService } from "../services/WalletService.js";
@@ -33,18 +34,19 @@ export class WalletController {
   });
 
   static repair = asyncHandler(async (req: Request, res: Response) => {
+    const { walletId } = req.params as z.infer<typeof walletLedgerParamsSchema>;
     const { dryRun } = (req.body ?? {}) as z.infer<typeof repairBodySchema>;
 
-    const userId = (req as unknown as { userId?: string }).userId;
+    const userId = req.user?.userId;
+    const isValidObjectId =
+      typeof userId === "string" && /^[0-9a-fA-F]{24}$/.test(userId);
 
     const report = await ReconciliationService.repairUnposted({
-      actor: userId
-        ? {
-            type: "ADMIN",
-            id: userId as unknown as import("mongoose").Types.ObjectId,
-          }
+      walletId,
+      actor: isValidObjectId
+        ? { type: "ADMIN", id: new mongoose.Types.ObjectId(userId) }
         : { type: "SYSTEM" },
-      source: userId ? "reconciliation:admin" : "reconciliation:auto",
+      source: isValidObjectId ? "reconciliation:admin" : "reconciliation:auto",
       dryRun,
     });
 
