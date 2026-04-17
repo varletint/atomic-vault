@@ -44,6 +44,7 @@ type PaystackVerifyResponse = {
     status: "success" | "failed" | "abandoned";
     reference: string;
     amount: number;
+    fees?: number;
     currency: string;
     gateway_response: string;
     paid_at: string | null;
