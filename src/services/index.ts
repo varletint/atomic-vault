@@ -13,3 +13,5 @@ export { StorageService } from "./StorageService.js";
 export { SessionService } from "./SessionService.js";
 export { AuthTokenService } from "./AuthTokenService.js";
 export { AuditService } from "./AuditService.js";
+export { WalletService } from "./WalletService.js";
+export { ReconciliationService } from "./ReconciliationService.js";
