@@ -90,9 +90,14 @@ export class ReconciliationService {
     const driftAvailable = wallet.available - ledgerAvailable;
     const driftPending = wallet.pending - ledgerPending;
 
+    /* Only count unposted transactions for THIS wallet */
+    const postedTxIds = await LedgerEntry.distinct("transactionId", {
+      walletId: wallet._id,
+    });
     const unposted = await Transaction.countDocuments({
       status: "SUCCESS",
       postedAt: { $exists: false },
+      _id: { $nin: postedTxIds },
     });
 
     return {
@@ -112,11 +117,24 @@ export class ReconciliationService {
     };
   }
 
-  /** Find SUCCESS transactions that were never posted to the ledger. */
-  static async findUnpostedTransactions(): Promise<ITransaction[]> {
+  /**
+   * Find SUCCESS transactions that were never posted to the ledger
+   * for a specific wallet.
+   */
+  static async findUnpostedTransactions(
+    walletId: string
+  ): Promise<ITransaction[]> {
+    const wallet = await Wallet.findById(walletId).lean();
+    if (!wallet) throw NotFoundError("Wallet");
+
+    const postedTxIds = await LedgerEntry.distinct("transactionId", {
+      walletId: wallet._id,
+    });
+
     return Transaction.find({
       status: "SUCCESS",
       postedAt: { $exists: false },
+      _id: { $nin: postedTxIds },
     })
       .sort({ createdAt: 1 })
       .lean<ITransaction[]>();
@@ -128,12 +146,15 @@ export class ReconciliationService {
    * failure does not block the rest.
    */
   static async repairUnposted(params: {
+    walletId: string;
     actor: ILedgerActorRef;
     source: string;
     dryRun?: boolean;
   }): Promise<RepairReport> {
-    const { actor, source, dryRun = false } = params;
-    const unposted = await ReconciliationService.findUnpostedTransactions();
+    const { walletId, actor, source, dryRun = false } = params;
+    const unposted = await ReconciliationService.findUnpostedTransactions(
+      walletId
+    );
 
     const results: RepairResult[] = [];
     let repaired = 0;
@@ -160,32 +181,50 @@ export class ReconciliationService {
       const session = await mongoose.startSession();
       session.startTransaction();
       try {
+        /* Re-check inside session: another process may have posted it */
+        const freshTx = await Transaction.findById(tx._id).session(session);
+        if (!freshTx || freshTx.postedAt) {
+          await session.abortTransaction();
+          results.push({
+            ...base,
+            status: "skipped",
+            reason: freshTx ? "already_posted" : "transaction_not_found",
+          });
+          skipped++;
+          continue;
+        }
+
         const gatewayFee =
-          typeof tx.gatewayFee === "number" ? tx.gatewayFee : 0;
+          typeof freshTx.gatewayFee === "number" ? freshTx.gatewayFee : 0;
 
         await LedgerService.postStoreOrderPayment({
           session,
-          transactionId: tx._id.toString(),
-          currency: tx.currency,
-          amountPaid: tx.amount,
+          transactionId: freshTx._id.toString(),
+          currency: freshTx.currency,
+          amountPaid: freshTx.amount,
           gatewayFee,
           actor,
           source,
-          traceId: `repair:${tx._id.toString()}`,
+          traceId: `repair:${freshTx._id.toString()}`,
         });
 
         await session.commitTransaction();
         results.push({ ...base, status: "repaired" });
         repaired++;
-      } catch (err) {
+      } catch (err: unknown) {
         await session.abortTransaction();
-        const message = err instanceof Error ? err.message : "Unknown error";
 
-        /* Already posted (postedAt guard) → skip, not error */
-        if (message.includes("Transaction not found")) {
-          results.push({ ...base, status: "skipped", reason: message });
+        /* E11000 duplicate key on dedupeKey → ledger entry already exists */
+        const code = (err as { code?: number }).code;
+        if (code === 11000) {
+          results.push({
+            ...base,
+            status: "skipped",
+            reason: "duplicate_ledger_entry",
+          });
           skipped++;
         } else {
+          const message = err instanceof Error ? err.message : "Unknown error";
           results.push({ ...base, status: "error", reason: message });
           errors++;
         }
