@@ -2,7 +2,6 @@ import mongoose from "mongoose";
 import {
   LedgerEntry,
   Wallet,
-  type IWallet,
   type ILedgerEntryAttrs,
   type LedgerBucket,
   type LedgerDirection,
@@ -11,8 +10,7 @@ import {
   Transaction,
 } from "../models/index.js";
 import { ValidationError } from "../utils/AppError.js";
-
-const STORE_OWNER_ID = new mongoose.Types.ObjectId("000000000000000000000001");
+import { WalletService } from "./WalletService.js";
 
 type LedgerLine = {
   walletId: mongoose.Types.ObjectId;
@@ -25,40 +23,8 @@ type LedgerLine = {
   dedupeKey?: string;
 };
 
-function deltaFor(
-  direction: LedgerDirection,
-  amount: number
-): number {
+function deltaFor(direction: LedgerDirection, amount: number): number {
   return direction === "CREDIT" ? amount : -amount;
-}
-
-async function getOrCreateStoreWallet(params: {
-  session: mongoose.ClientSession;
-  currency: string;
-}): Promise<IWallet> {
-  const { session, currency } = params;
-  const existing = await Wallet.findOne({
-    ownerType: "STORE",
-    ownerId: STORE_OWNER_ID,
-    currency,
-  }).session(session);
-  if (existing) return existing;
-
-  const [created] = await Wallet.create(
-    [
-      {
-        ownerType: "STORE" as const,
-        ownerId: STORE_OWNER_ID,
-        currency,
-        available: 0,
-        pending: 0,
-        status: "ACTIVE" as const,
-      },
-    ],
-    { session }
-  );
-  if (!created) throw new Error("Failed to create store wallet");
-  return created;
 }
 
 export class LedgerService {
@@ -92,7 +58,9 @@ export class LedgerService {
       throw ValidationError("amountPaid must be a positive integer (kobo).");
     }
     if (!Number.isInteger(gatewayFee) || gatewayFee < 0) {
-      throw ValidationError("gatewayFee must be a non-negative integer (kobo).");
+      throw ValidationError(
+        "gatewayFee must be a non-negative integer (kobo)."
+      );
     }
     if (gatewayFee > amountPaid) {
       throw ValidationError("gatewayFee cannot exceed amountPaid.");
@@ -100,9 +68,9 @@ export class LedgerService {
 
     const tx = await Transaction.findById(transactionId).session(session);
     if (!tx) throw ValidationError("Transaction not found for ledger posting.");
-    if (tx.postedAt) return; 
+    if (tx.postedAt) return;
 
-    const storeWallet = await getOrCreateStoreWallet({ session, currency });
+    const storeWallet = await WalletService.getStoreWallet(currency, session);
 
     const lines: LedgerLine[] = [
       {
@@ -177,4 +145,3 @@ export class LedgerService {
     await tx.save({ session });
   }
 }
-
