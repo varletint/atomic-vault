@@ -8,6 +8,7 @@ import {
   Product,
   Transaction,
   type ITransaction,
+  type TransactionStatus,
   type PaymentMethod,
   User,
   TrackingEvent,
@@ -18,6 +19,8 @@ import { InventoryService } from "./InventoryService.js";
 import { resolveGateway, type ChargeParams } from "../payments/index.js";
 import { OutboxProcessor } from "./OutboxProcessor.js";
 import { OutboxService } from "./OutboxService.js";
+import { LedgerService } from "./LedgerService.js";
+import { TransactionEventService } from "./TransactionEventService.js";
 import {
   ORDER_GUEST_MAX_ITEMS_TOTAL_KOBO,
   ORDER_GUEST_MAX_ITEMS_TOTAL_NGN,
@@ -69,6 +72,28 @@ const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
 
 function assertValidTransition(current: OrderStatus, next: OrderStatus): void {
   const allowed = ALLOWED_TRANSITIONS[current];
+  if (!allowed.includes(next)) {
+    throw FsmError(current, next, allowed);
+  }
+}
+
+/* Transaction FSM */
+
+const ALLOWED_TX_TRANSITIONS: Record<TransactionStatus, TransactionStatus[]> = {
+  INITIATED: ["PROCESSING", "FAILED"],
+  PROCESSING: ["VERIFYING", "FAILED"],
+  VERIFYING: ["SUCCESS", "FAILED", "PROCESSING"],
+  SUCCESS: ["REFUND_INITIATED"],
+  FAILED: [],
+  REFUND_INITIATED: ["REFUNDED", "FAILED"],
+  REFUNDED: [],
+};
+
+function assertValidTxTransition(
+  current: TransactionStatus,
+  next: TransactionStatus
+): void {
+  const allowed = ALLOWED_TX_TRANSITIONS[current];
   if (!allowed.includes(next)) {
     throw FsmError(current, next, allowed);
   }
@@ -756,14 +781,45 @@ export class OrderService {
     session.startTransaction();
 
     try {
-      const order = await Order.findById(claimed.order).session(session);
+      /* Re-fetch claimed inside the session for snapshot isolation */
+      const freshClaimed = await Transaction.findById(claimed._id).session(
+        session
+      );
+      if (!freshClaimed) throw NotFoundError("Transaction");
+
+      const order = await Order.findById(freshClaimed.order).session(session);
       if (!order) throw NotFoundError("Order");
 
       if (result.success) {
-        claimed.status = "SUCCESS";
-        claimed.paidAt = result.paidAt ? new Date(result.paidAt) : new Date();
-        if (result.metadata) claimed.metadata = result.metadata;
-        await claimed.save({ session });
+        assertValidTransition(order.status, "CONFIRMED");
+        assertValidTxTransition(freshClaimed.status, "SUCCESS");
+
+        const amountPaid =
+          typeof result.amountPaid === "number"
+            ? result.amountPaid
+            : freshClaimed.amount;
+        const gatewayFee =
+          typeof result.gatewayFee === "number" ? result.gatewayFee : 0;
+
+        freshClaimed.status = "SUCCESS";
+        freshClaimed.paidAt = result.paidAt
+          ? new Date(result.paidAt)
+          : new Date();
+        freshClaimed.gatewayFee = gatewayFee;
+        if (result.metadata) freshClaimed.metadata = result.metadata;
+        await freshClaimed.save({ session });
+
+        await TransactionEventService.record({
+          session,
+          transactionId: freshClaimed._id.toString(),
+          previousStatus: "VERIFYING",
+          newStatus: "SUCCESS",
+          reason: "payment_confirmed",
+          actor: { type: "SYSTEM" },
+          source: "payment:verify",
+          traceId: `pay:${reference}`,
+          metadata: { providerRef: result.providerRef },
+        });
 
         for (const item of order.items) {
           await InventoryService.commitReservation(
@@ -779,6 +835,26 @@ export class OrderService {
           timestamp: new Date(),
           note: "Payment verified successfully",
         });
+
+        order.payment = {
+          provider: freshClaimed.provider,
+          reference: result.providerRef,
+          amountPaid,
+          gatewayFee,
+          paidAt: freshClaimed.paidAt,
+        };
+
+        await LedgerService.postStoreOrderPayment({
+          session,
+          transactionId: freshClaimed._id.toString(),
+          currency: freshClaimed.currency,
+          amountPaid,
+          gatewayFee,
+          actor: { type: "SYSTEM" },
+          source: "paystack:verify",
+          traceId: `pay:${reference}`,
+        });
+
         await TrackingEvent.create(
           [
             {
@@ -796,18 +872,36 @@ export class OrderService {
             dedupeKey: `order:${order._id.toString()}:confirmed`,
             payload: {
               orderId: order._id.toString(),
-              transactionId: claimed._id.toString(),
+              transactionId: freshClaimed._id.toString(),
               paymentReference: reference,
             },
           },
           session
         );
       } else {
-        claimed.status = "FAILED";
-        claimed.failureReason =
+        assertValidTransition(order.status, "FAILED");
+        assertValidTxTransition(freshClaimed.status, "FAILED");
+
+        freshClaimed.status = "FAILED";
+        freshClaimed.failureReason =
           result.failureReason ?? "Payment declined by provider.";
-        if (result.metadata) claimed.metadata = result.metadata;
-        await claimed.save({ session });
+        if (result.metadata) freshClaimed.metadata = result.metadata;
+        await freshClaimed.save({ session });
+
+        await TransactionEventService.record({
+          session,
+          transactionId: freshClaimed._id.toString(),
+          previousStatus: "VERIFYING",
+          newStatus: "FAILED",
+          reason: "payment_failed",
+          actor: { type: "SYSTEM" },
+          source: "payment:verify",
+          traceId: `pay:${reference}`,
+          metadata: {
+            providerRef: result.providerRef,
+            failureReason: freshClaimed.failureReason,
+          },
+        });
 
         for (const item of order.items) {
           await InventoryService.releaseReservation(
@@ -818,7 +912,7 @@ export class OrderService {
         }
 
         order.status = "FAILED";
-        const failureNote = claimed.failureReason || "Payment failed";
+        const failureNote = freshClaimed.failureReason || "Payment failed";
         order.statusHistory.push({
           status: "FAILED",
           timestamp: new Date(),
@@ -839,7 +933,7 @@ export class OrderService {
 
       return {
         order: order.toObject() as IOrder,
-        transaction: claimed.toObject() as ITransaction,
+        transaction: freshClaimed.toObject() as ITransaction,
       };
     } catch (error) {
       await session.abortTransaction();
@@ -893,8 +987,7 @@ export class OrderService {
       eventData
     )) as unknown as ITrackingEvent;
 
-    // Optionally update the high-level order status if it differs
-    // and make sure it's a valid transition to prevent breaking the state machine.
+
     if (order.status !== status) {
       assertValidTransition(order.status, status);
       order.status = status;

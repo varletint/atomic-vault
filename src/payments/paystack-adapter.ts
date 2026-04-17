@@ -46,6 +46,8 @@ export class PaystackGateway implements PaymentGateway {
       return {
         success: true,
         providerRef: data.reference,
+        amountPaid: data.amount,
+        gatewayFee: data.fees,
         paidAt: data.paid_at,
         metadata: {
           channel: data.channel,
@@ -59,6 +61,8 @@ export class PaystackGateway implements PaymentGateway {
     return {
       success: false,
       providerRef: data.reference,
+      amountPaid: data.amount,
+      gatewayFee: data.fees,
       failureReason: data.gateway_response || `Payment ${data.status}`,
       metadata: {
         channel: data.channel,

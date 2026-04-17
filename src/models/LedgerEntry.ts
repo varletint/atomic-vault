@@ -17,8 +17,7 @@ export interface IActorRef {
   id?: Types.ObjectId;
 }
 
-export interface ILedgerEntry extends Document {
-  _id: Types.ObjectId;
+export interface ILedgerEntryAttrs {
   transactionId: Types.ObjectId;
   walletId: Types.ObjectId;
   currency: string;
@@ -33,6 +32,10 @@ export interface ILedgerEntry extends Document {
   dedupeKey?: string;
   balanceAfterAvailable?: number;
   balanceAfterPending?: number;
+}
+
+export interface ILedgerEntry extends Document, ILedgerEntryAttrs {
+  _id: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
