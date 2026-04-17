@@ -19,6 +19,8 @@ export type InitializeResult = {
 export type VerifyResult = {
   success: boolean;
   providerRef: string;
+  amountPaid?: number;
+  gatewayFee?: number;
   failureReason?: string;
   paidAt?: string | null;
   metadata?: Record<string, unknown>;
