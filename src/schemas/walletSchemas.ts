@@ -17,4 +17,5 @@ export const walletLedgerQuerySchema = z.object({
 
 export const repairBodySchema = z.object({
   dryRun: z.boolean().optional().default(false),
+  confirm: z.boolean().optional().default(false),
 });

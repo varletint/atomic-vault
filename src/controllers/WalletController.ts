@@ -5,6 +5,7 @@ import { LedgerEntry, Wallet, type ILedgerEntry } from "../models/index.js";
 import { NotFoundError, ValidationError } from "../utils/AppError.js";
 import { WalletService } from "../services/WalletService.js";
 import { ReconciliationService } from "../services/ReconciliationService.js";
+import { AuditService } from "../services/AuditService.js";
 import type { z } from "zod";
 import type {
   walletLedgerParamsSchema,
@@ -35,19 +36,47 @@ export class WalletController {
 
   static repair = asyncHandler(async (req: Request, res: Response) => {
     const { walletId } = req.params as z.infer<typeof walletLedgerParamsSchema>;
-    const { dryRun } = (req.body ?? {}) as z.infer<typeof repairBodySchema>;
+    const { dryRun, confirm } = (req.body ?? {}) as z.infer<
+      typeof repairBodySchema
+    >;
+
+    /* Non-dry-run repairs require explicit confirmation */
+    if (!dryRun && !confirm) {
+      throw ValidationError(
+        "Destructive operation: set { confirm: true } to proceed, or use { dryRun: true } to preview."
+      );
+    }
 
     const userId = req.user?.userId;
     const isValidObjectId =
       typeof userId === "string" && /^[0-9a-fA-F]{24}$/.test(userId);
 
+    const actor = isValidObjectId
+      ? { type: "ADMIN" as const, id: new mongoose.Types.ObjectId(userId) }
+      : { type: "SYSTEM" as const };
+    const source = isValidObjectId
+      ? "reconciliation:admin"
+      : "reconciliation:auto";
+
     const report = await ReconciliationService.repairUnposted({
       walletId,
-      actor: isValidObjectId
-        ? { type: "ADMIN", id: new mongoose.Types.ObjectId(userId) }
-        : { type: "SYSTEM" },
-      source: isValidObjectId ? "reconciliation:admin" : "reconciliation:auto",
+      actor,
+      source,
       dryRun,
+    });
+
+    /* Audit log */
+    await AuditService.log({
+      action: "RECONCILIATION_REPAIR",
+      actor: AuditService.getActorFromRequest(req),
+      entity: { type: "Other", id: walletId, name: "Wallet" },
+      request: AuditService.getRequestContext(req),
+      result: { success: true },
+      metadata: {
+        dryRun,
+        ...report.summary,
+      },
+      severity: dryRun ? "info" : "warning",
     });
 
     res.status(200).json({
