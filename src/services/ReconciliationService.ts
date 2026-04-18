@@ -20,7 +20,13 @@ export type ReconciliationReport = {
   drift: { available: number; pending: number };
   isBalanced: boolean;
   unpostedTransactions: number;
-  entries: { total: number; debits: number; credits: number };
+  entries: {
+    total: number;
+    debitCount: number;
+    creditCount: number;
+    debitSum: number;
+    creditSum: number;
+  };
 };
 
 export type RepairResult = {
@@ -75,6 +81,8 @@ export class ReconciliationService {
     let ledgerPending = 0;
     let totalDebits = 0;
     let totalCredits = 0;
+    let debitSum = 0;
+    let creditSum = 0;
     let totalEntries = 0;
 
     for (const row of agg) {
@@ -82,8 +90,13 @@ export class ReconciliationService {
       if (row._id.bucket === "AVAILABLE") ledgerAvailable += signed;
       else ledgerPending += signed;
 
-      if (row._id.direction === "DEBIT") totalDebits += row.count;
-      else totalCredits += row.count;
+      if (row._id.direction === "DEBIT") {
+        totalDebits += row.count;
+        debitSum += row.total;
+      } else {
+        totalCredits += row.count;
+        creditSum += row.total;
+      }
       totalEntries += row.count;
     }
 
@@ -111,8 +124,10 @@ export class ReconciliationService {
       unpostedTransactions: unposted,
       entries: {
         total: totalEntries,
-        debits: totalDebits,
-        credits: totalCredits,
+        debitCount: totalDebits,
+        creditCount: totalCredits,
+        debitSum,
+        creditSum,
       },
     };
   }
@@ -181,7 +196,6 @@ export class ReconciliationService {
       const session = await mongoose.startSession();
       session.startTransaction();
       try {
-        /* Re-check inside session: another process may have posted it */
         const freshTx = await Transaction.findById(tx._id).session(session);
         if (!freshTx || freshTx.postedAt) {
           await session.abortTransaction();
