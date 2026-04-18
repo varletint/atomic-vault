@@ -19,3 +19,29 @@ export const repairBodySchema = z.object({
   dryRun: z.boolean().optional().default(false),
   confirm: z.boolean().optional().default(false),
 });
+
+export const reverseParamsSchema = z.object({
+  transactionId: objectIdSchema,
+});
+
+export const reverseBodySchema = z.object({
+  reason: z
+    .string()
+    .min(5, "Reason must be at least 5 characters")
+    .max(500, "Reason must be at most 500 characters"),
+  confirm: z.boolean().refine((v) => v === true, {
+    message: "Destructive operation: confirm must be true",
+  }),
+});
+
+export const adjustBodySchema = z.object({
+  direction: z.enum(["CREDIT", "DEBIT"]),
+  amount: z.number().int().min(1, "Amount must be at least 1 kobo"),
+  reason: z
+    .string()
+    .min(5, "Reason must be at least 5 characters")
+    .max(500, "Reason must be at most 500 characters"),
+  confirm: z.boolean().refine((v) => v === true, {
+    message: "Destructive operation: confirm must be true",
+  }),
+});
