@@ -5,12 +5,17 @@ import { LedgerEntry, Wallet, type ILedgerEntry } from "../models/index.js";
 import { NotFoundError, ValidationError } from "../utils/AppError.js";
 import { WalletService } from "../services/WalletService.js";
 import { ReconciliationService } from "../services/ReconciliationService.js";
+import { LedgerService } from "../services/LedgerService.js";
+import { TransactionEventService } from "../services/TransactionEventService.js";
 import { AuditService } from "../services/AuditService.js";
 import type { z } from "zod";
 import type {
   walletLedgerParamsSchema,
   walletLedgerQuerySchema,
   repairBodySchema,
+  reverseParamsSchema,
+  reverseBodySchema,
+  adjustBodySchema,
 } from "../schemas/walletSchemas.js";
 
 export class WalletController {
@@ -126,5 +131,134 @@ export class WalletController {
         totalPages: Math.ceil(total / limit),
       },
     });
+  });
+
+  /** POST /transactions/:transactionId/reverse — admin reversal. */
+  static reverse = asyncHandler(async (req: Request, res: Response) => {
+    const { transactionId } = req.params as z.infer<typeof reverseParamsSchema>;
+    const { reason } = req.body as z.infer<typeof reverseBodySchema>;
+
+    const userId = req.user?.userId;
+    const isValidObjectId =
+      typeof userId === "string" && /^[0-9a-fA-F]{24}$/.test(userId);
+
+    const actor = isValidObjectId
+      ? { type: "ADMIN" as const, id: new mongoose.Types.ObjectId(userId) }
+      : { type: "SYSTEM" as const };
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+      const result = await LedgerService.postReversalJournal({
+        session,
+        originalTransactionId: transactionId,
+        reason,
+        actor,
+        source: "admin:reverse",
+        traceId: `reverse:${transactionId}`,
+      });
+
+      await TransactionEventService.record({
+        session,
+        transactionId,
+        previousStatus: "SUCCESS",
+        newStatus: "REFUNDED",
+        reason,
+        actor,
+        source: "admin:reverse",
+        traceId: `reverse:${transactionId}`,
+      });
+
+      await session.commitTransaction();
+
+      /* Audit log (outside session) */
+      await AuditService.log({
+        action: "TRANSACTION_REVERSED",
+        actor: AuditService.getActorFromRequest(req),
+        entity: { type: "Transaction", id: transactionId },
+        request: AuditService.getRequestContext(req),
+        result: { success: true },
+        metadata: {
+          reason,
+          reversalTransactionId: result.reversalTransactionId,
+        },
+        severity: "warning",
+      });
+
+      res.status(200).json({
+        success: true,
+        data: {
+          reversalTransactionId: result.reversalTransactionId,
+          originalTransactionId: transactionId,
+          reason,
+        },
+      });
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
+  });
+
+  /** POST /wallets/:walletId/adjust — admin wallet adjustment. */
+  static adjust = asyncHandler(async (req: Request, res: Response) => {
+    const { walletId } = req.params as z.infer<typeof walletLedgerParamsSchema>;
+    const { direction, amount, reason } = req.body as z.infer<
+      typeof adjustBodySchema
+    >;
+
+    const userId = req.user?.userId;
+    const isValidObjectId =
+      typeof userId === "string" && /^[0-9a-fA-F]{24}$/.test(userId);
+
+    const actor = isValidObjectId
+      ? { type: "ADMIN" as const, id: new mongoose.Types.ObjectId(userId) }
+      : { type: "SYSTEM" as const };
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+      const result = await LedgerService.postAdjustmentJournal({
+        session,
+        walletId,
+        direction,
+        amount,
+        currency: "NGN",
+        reason,
+        actor,
+        source: "admin:adjust",
+        traceId: `adjust:${walletId}:${Date.now()}`,
+      });
+
+      await session.commitTransaction();
+
+      /* Audit log (outside session) */
+      await AuditService.log({
+        action: "WALLET_ADJUSTED",
+        actor: AuditService.getActorFromRequest(req),
+        entity: { type: "Other", id: walletId, name: "Wallet" },
+        request: AuditService.getRequestContext(req),
+        result: { success: true },
+        metadata: { direction, amount, reason },
+        severity: "warning",
+      });
+
+      res.status(200).json({
+        success: true,
+        data: {
+          adjustmentTransactionId: result.adjustmentTransactionId,
+          walletId,
+          direction,
+          amount,
+          reason,
+        },
+      });
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
   });
 }

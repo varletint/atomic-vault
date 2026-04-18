@@ -7,6 +7,9 @@ import {
   walletLedgerParamsSchema,
   walletLedgerQuerySchema,
   repairBodySchema,
+  reverseParamsSchema,
+  reverseBodySchema,
+  adjustBodySchema,
 } from "../schemas/walletSchemas.js";
 
 const router = Router();
@@ -42,6 +45,26 @@ router.get(
   validate(walletLedgerParamsSchema, "params"),
   validate(walletLedgerQuerySchema, "query"),
   WalletController.getLedger
+);
+
+/* Admin transaction operations */
+
+router.post(
+  "/transactions/:transactionId/reverse",
+  authMiddleware,
+  requireRole("ADMIN"),
+  validate(reverseParamsSchema, "params"),
+  validate(reverseBodySchema, "body"),
+  WalletController.reverse
+);
+
+router.post(
+  "/:walletId/adjust",
+  authMiddleware,
+  requireRole("ADMIN"),
+  validate(walletLedgerParamsSchema, "params"),
+  validate(adjustBodySchema, "body"),
+  WalletController.adjust
 );
 
 export default router;
