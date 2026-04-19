@@ -45,3 +45,13 @@ export const updateProfileSchema = z
   .refine((data) => data.name !== undefined || data.address !== undefined, {
     message: "Provide at least one field to update (name or address).",
   });
+
+export const adminUsersQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).optional().default(1),
+  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+  search: z.string().optional(),
+  role: z.enum(["USER", "ADMIN"]).optional(),
+  status: z
+    .enum(["UNVERIFIED", "ACTIVE", "SUSPENDED", "DEACTIVATED", "PENDING"])
+    .optional(),
+});
