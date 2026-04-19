@@ -21,7 +21,15 @@ export function validate(schema: ZodSchema, target: ValidationTarget = "body") {
       return;
     }
 
-    req[target] = result.data;
+    if (target === "body") {
+      req.body = result.data;
+    } else {
+      const source = req[target];
+      for (const key of Object.keys(source)) {
+        delete (source as Record<string, unknown>)[key];
+      }
+      Object.assign(source, result.data);
+    }
     next();
   };
 }
