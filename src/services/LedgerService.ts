@@ -13,7 +13,7 @@ import { ValidationError } from "../utils/AppError.js";
 import { WalletService } from "./WalletService.js";
 import { OutboxService } from "./OutboxService.js";
 
-type LedgerLine = {
+export type JournalLine = {
   walletId: mongoose.Types.ObjectId;
   currency: string;
   bucket: LedgerBucket;
@@ -24,11 +24,113 @@ type LedgerLine = {
   dedupeKey?: string;
 };
 
+type PostJournalParams = {
+  session: mongoose.ClientSession;
+  transactionId: mongoose.Types.ObjectId;
+  lines: JournalLine[];
+  actor: ILedgerActorRef;
+  source: string;
+  traceId: string;
+};
+
 function deltaFor(direction: LedgerDirection, amount: number): number {
   return direction === "CREDIT" ? amount : -amount;
 }
 
+async function emitOutboxEvents(params: {
+  session: mongoose.ClientSession;
+  transactionId: string;
+  walletIds: Set<string>;
+  outboxPayload: Record<string, unknown>;
+}): Promise<void> {
+  const { session, transactionId, walletIds, outboxPayload } = params;
+
+  await OutboxService.enqueue(
+    {
+      type: "TRANSACTION_POSTED",
+      dedupeKey: `tx:${transactionId}:posted`,
+      payload: { transactionId, ...outboxPayload },
+    },
+    session
+  );
+
+  for (const wId of walletIds) {
+    const freshWallet = await Wallet.findById(wId).session(session).lean();
+    if (freshWallet) {
+      await OutboxService.enqueue(
+        {
+          type: "WALLET_UPDATED",
+          dedupeKey: `tx:${transactionId}:wallet:${wId}`,
+          payload: {
+            walletId: wId,
+            currency: freshWallet.currency,
+            available: freshWallet.available,
+            pending: freshWallet.pending,
+            triggerTransactionId: transactionId,
+          },
+        },
+        session
+      );
+    }
+  }
+}
+
 export class LedgerService {
+  private static async postJournalLines(
+    params: PostJournalParams
+  ): Promise<Set<string>> {
+    const { session, transactionId, lines, actor, source, traceId } = params;
+    const affectedWalletIds = new Set<string>();
+
+    for (const line of lines) {
+      const wallet = await Wallet.findById(line.walletId).session(session);
+      if (!wallet) throw ValidationError("Wallet not found.");
+      if (wallet.status === "FROZEN") {
+        throw ValidationError("Wallet is frozen.");
+      }
+      if (wallet.currency !== line.currency) {
+        throw ValidationError("Wallet currency mismatch.");
+      }
+
+      const delta = deltaFor(line.direction, line.amount);
+      if (line.bucket === "AVAILABLE") {
+        const next = wallet.available + delta;
+        if (next < 0) throw ValidationError("Insufficient available balance.");
+        wallet.available = next;
+      } else {
+        const next = wallet.pending + delta;
+        if (next < 0) throw ValidationError("Insufficient pending balance.");
+        wallet.pending = next;
+      }
+
+      await wallet.save({ session });
+
+      const entry: ILedgerEntryAttrs = {
+        transactionId,
+        walletId: wallet._id,
+        currency: line.currency,
+        bucket: line.bucket,
+        direction: line.direction,
+        amount: line.amount,
+        entryType: line.entryType,
+        narration: line.narration,
+        actor,
+        source,
+        traceId,
+        dedupeKey: line.dedupeKey,
+        balanceAfterAvailable: wallet.available,
+        balanceAfterPending: wallet.pending,
+      };
+
+      await LedgerEntry.create([entry], { session });
+      affectedWalletIds.add(wallet._id.toString());
+    }
+
+    return affectedWalletIds;
+  }
+
+  /* ── High-level posting methods ── */
+
   /**
    * Posts an order payment journal to the STORE wallet:
    * - CREDIT PAYMENT for amountPaid
@@ -73,7 +175,7 @@ export class LedgerService {
 
     const storeWallet = await WalletService.getStoreWallet(currency, session);
 
-    const lines: LedgerLine[] = [
+    const lines: JournalLine[] = [
       {
         walletId: storeWallet._id,
         currency,
@@ -98,97 +200,34 @@ export class LedgerService {
       });
     }
 
-    for (const line of lines) {
-      const wallet = await Wallet.findById(line.walletId).session(session);
-      if (!wallet) throw ValidationError("Wallet not found.");
-      if (wallet.status === "FROZEN") {
-        throw ValidationError("Wallet is frozen.");
-      }
-      if (wallet.currency !== line.currency) {
-        throw ValidationError("Wallet currency mismatch.");
-      }
-
-      const delta = deltaFor(line.direction, line.amount);
-      if (line.bucket === "AVAILABLE") {
-        const next = wallet.available + delta;
-        if (next < 0) throw ValidationError("Insufficient available balance.");
-        wallet.available = next;
-      } else {
-        const next = wallet.pending + delta;
-        if (next < 0) throw ValidationError("Insufficient pending balance.");
-        wallet.pending = next;
-      }
-
-      await wallet.save({ session });
-
-      const entry: ILedgerEntryAttrs = {
-        transactionId: new mongoose.Types.ObjectId(transactionId),
-        walletId: wallet._id,
-        currency: line.currency,
-        bucket: line.bucket,
-        direction: line.direction,
-        amount: line.amount,
-        entryType: line.entryType,
-        narration: line.narration,
-        actor,
-        source,
-        traceId,
-        dedupeKey: line.dedupeKey,
-        balanceAfterAvailable: wallet.available,
-        balanceAfterPending: wallet.pending,
-      };
-
-      await LedgerEntry.create([entry], { session });
-    }
+    const txObjectId = new mongoose.Types.ObjectId(transactionId);
+    const affectedWallets = await this.postJournalLines({
+      session,
+      transactionId: txObjectId,
+      lines,
+      actor,
+      source,
+      traceId,
+    });
 
     tx.postedAt = new Date();
     tx.gatewayFee = gatewayFee;
     await tx.save({ session });
 
-    /* ── Outbox events (inside session for atomicity) ── */
-
-    await OutboxService.enqueue(
-      {
-        type: "TRANSACTION_POSTED",
-        dedupeKey: `tx:${transactionId}:posted`,
-        payload: {
-          transactionId,
-          currency,
-          amountPaid,
-          gatewayFee,
-          netAmount: amountPaid - gatewayFee,
-          postedAt: tx.postedAt.toISOString(),
-        },
+    await emitOutboxEvents({
+      session,
+      transactionId,
+      walletIds: affectedWallets,
+      outboxPayload: {
+        currency,
+        amountPaid,
+        gatewayFee,
+        netAmount: amountPaid - gatewayFee,
+        postedAt: tx.postedAt.toISOString(),
       },
-      session
-    );
-
-    const freshWallet = await Wallet.findById(storeWallet._id)
-      .session(session)
-      .lean();
-    if (freshWallet) {
-      await OutboxService.enqueue(
-        {
-          type: "WALLET_UPDATED",
-          dedupeKey: `tx:${transactionId}:wallet:${storeWallet._id.toString()}`,
-          payload: {
-            walletId: storeWallet._id.toString(),
-            currency,
-            available: freshWallet.available,
-            pending: freshWallet.pending,
-            triggerTransactionId: transactionId,
-          },
-        },
-        session
-      );
-    }
+    });
   }
 
-  /**
-   * Posts a full reversal of a previously posted transaction.
-   * Creates opposite-direction ledger entries, updates wallet balances,
-   * creates a new REVERSAL Transaction, and emits outbox events.
-   */
   static async postReversalJournal(params: {
     session: mongoose.ClientSession;
     originalTransactionId: string;
@@ -200,7 +239,6 @@ export class LedgerService {
     const { session, originalTransactionId, reason, actor, source, traceId } =
       params;
 
-    /* Validate original transaction */
     const originalTx = await Transaction.findById(
       originalTransactionId
     ).session(session);
@@ -219,7 +257,6 @@ export class LedgerService {
       throw ValidationError("Transaction has already been refunded/reversed.");
     }
 
-    /* Fetch original ledger entries */
     const originalEntries = await LedgerEntry.find({
       transactionId: originalTx._id,
     })
@@ -247,10 +284,7 @@ export class LedgerService {
           idempotencyKey: `reversal:${originalTransactionId}`,
           postedAt: new Date(),
           paidAt: new Date(),
-          metadata: {
-            originalTransactionId,
-            reason,
-          },
+          metadata: { originalTransactionId, reason },
         },
       ],
       { session }
@@ -259,99 +293,46 @@ export class LedgerService {
       throw ValidationError("Failed to create reversal transaction.");
     }
 
-    /* Post opposite-direction entries */
-    for (const entry of originalEntries) {
-      const oppositeDirection =
-        entry.direction === "CREDIT" ? "DEBIT" : "CREDIT";
+    /* Build opposite-direction journal lines */
+    const reversalLines: JournalLine[] = originalEntries.map((entry) => ({
+      walletId: entry.walletId,
+      currency: entry.currency,
+      bucket: entry.bucket as LedgerBucket,
+      direction: (entry.direction === "CREDIT"
+        ? "DEBIT"
+        : "CREDIT") as LedgerDirection,
+      amount: entry.amount,
+      entryType: "REVERSAL" as LedgerEntryType,
+      narration: `Reversal: ${entry.narration ?? entry.entryType}`,
+      dedupeKey: `reversal:${originalTransactionId}:${entry._id.toString()}`,
+    }));
 
-      const wallet = await Wallet.findById(entry.walletId).session(session);
-      if (!wallet) throw ValidationError("Wallet not found for reversal.");
-
-      const delta = deltaFor(
-        oppositeDirection as LedgerDirection,
-        entry.amount
-      );
-      if (entry.bucket === "AVAILABLE") {
-        const next = wallet.available + delta;
-        if (next < 0) {
-          throw ValidationError("Insufficient available balance for reversal.");
-        }
-        wallet.available = next;
-      } else {
-        const next = wallet.pending + delta;
-        if (next < 0) {
-          throw ValidationError("Insufficient pending balance for reversal.");
-        }
-        wallet.pending = next;
-      }
-
-      await wallet.save({ session });
-
-      const reversalEntry: ILedgerEntryAttrs = {
-        transactionId: reversalTx._id,
-        walletId: wallet._id,
-        currency: entry.currency,
-        bucket: entry.bucket as LedgerBucket,
-        direction: oppositeDirection as LedgerDirection,
-        amount: entry.amount,
-        entryType: "REVERSAL",
-        narration: `Reversal: ${entry.narration ?? entry.entryType}`,
-        actor,
-        source,
-        traceId,
-        dedupeKey: `reversal:${originalTransactionId}:${entry._id.toString()}`,
-        balanceAfterAvailable: wallet.available,
-        balanceAfterPending: wallet.pending,
-      };
-
-      await LedgerEntry.create([reversalEntry], { session });
-    }
+    const affectedWallets = await this.postJournalLines({
+      session,
+      transactionId: reversalTx._id,
+      lines: reversalLines,
+      actor,
+      source,
+      traceId,
+    });
 
     /* Mark original transaction as refunded */
     originalTx.status = "REFUNDED";
     originalTx.refundedAt = new Date();
     await originalTx.save({ session });
 
-    /* Outbox events */
-    await OutboxService.enqueue(
-      {
-        type: "TRANSACTION_POSTED",
-        dedupeKey: `tx:${reversalTx._id.toString()}:posted`,
-        payload: {
-          transactionId: reversalTx._id.toString(),
-          type: "REVERSAL",
-          originalTransactionId,
-          currency: reversalTx.currency,
-          amount: reversalTx.amount,
-          postedAt: reversalTx.postedAt!.toISOString(),
-        },
+    await emitOutboxEvents({
+      session,
+      transactionId: reversalTx._id.toString(),
+      walletIds: affectedWallets,
+      outboxPayload: {
+        type: "REVERSAL",
+        originalTransactionId,
+        currency: reversalTx.currency,
+        amount: reversalTx.amount,
+        postedAt: reversalTx.postedAt!.toISOString(),
       },
-      session
-    );
-
-    const storeWallet = await WalletService.getStoreWallet(
-      originalTx.currency,
-      session
-    );
-    const freshWallet = await Wallet.findById(storeWallet._id)
-      .session(session)
-      .lean();
-    if (freshWallet) {
-      await OutboxService.enqueue(
-        {
-          type: "WALLET_UPDATED",
-          dedupeKey: `tx:${reversalTx._id.toString()}:wallet:${storeWallet._id.toString()}`,
-          payload: {
-            walletId: storeWallet._id.toString(),
-            currency: freshWallet.currency,
-            available: freshWallet.available,
-            pending: freshWallet.pending,
-            triggerTransactionId: reversalTx._id.toString(),
-          },
-        },
-        session
-      );
-    }
+    });
 
     return { reversalTransactionId: reversalTx._id.toString() };
   }
@@ -396,13 +377,12 @@ export class LedgerService {
       throw ValidationError("Currency mismatch.");
     }
 
-    /* Create ADJUSTMENT transaction (uses wallet owner as a reference) */
     const idempotencyKey = `adjust:${walletId}:${Date.now()}:${traceId}`;
     const [adjustTx] = await Transaction.create(
       [
         {
           type: "ADJUSTMENT" as const,
-          order: wallet._id, // self-reference for non-order transactions
+          order: wallet._id,
           amount,
           currency: wallet.currency,
           status: "SUCCESS" as const,
@@ -419,67 +399,40 @@ export class LedgerService {
     if (!adjustTx)
       throw ValidationError("Failed to create adjustment transaction.");
 
-    /* Update wallet balance */
-    const delta = deltaFor(direction, amount);
-    const next = wallet.available + delta;
-    if (next < 0) {
-      throw ValidationError(
-        "Insufficient available balance for debit adjustment."
-      );
-    }
-    wallet.available = next;
-    await wallet.save({ session });
+    const lines: JournalLine[] = [
+      {
+        walletId: wallet._id,
+        currency: wallet.currency,
+        bucket: "AVAILABLE",
+        direction,
+        amount,
+        entryType: "ADJUSTMENT",
+        narration: `Admin adjustment: ${reason}`,
+        dedupeKey: `adjust:${adjustTx._id.toString()}`,
+      },
+    ];
 
-    /* Post ledger entry */
-    const entry: ILedgerEntryAttrs = {
+    const affectedWallets = await this.postJournalLines({
+      session,
       transactionId: adjustTx._id,
-      walletId: wallet._id,
-      currency: wallet.currency,
-      bucket: "AVAILABLE",
-      direction,
-      amount,
-      entryType: "ADJUSTMENT",
-      narration: `Admin adjustment: ${reason}`,
+      lines,
       actor,
       source,
       traceId,
-      dedupeKey: `adjust:${adjustTx._id.toString()}`,
-      balanceAfterAvailable: wallet.available,
-      balanceAfterPending: wallet.pending,
-    };
-    await LedgerEntry.create([entry], { session });
+    });
 
-    /* Outbox events */
-    await OutboxService.enqueue(
-      {
-        type: "TRANSACTION_POSTED",
-        dedupeKey: `tx:${adjustTx._id.toString()}:posted`,
-        payload: {
-          transactionId: adjustTx._id.toString(),
-          type: "ADJUSTMENT",
-          direction,
-          amount,
-          currency: wallet.currency,
-          postedAt: adjustTx.postedAt!.toISOString(),
-        },
+    await emitOutboxEvents({
+      session,
+      transactionId: adjustTx._id.toString(),
+      walletIds: affectedWallets,
+      outboxPayload: {
+        type: "ADJUSTMENT",
+        direction,
+        amount,
+        currency: wallet.currency,
+        postedAt: adjustTx.postedAt!.toISOString(),
       },
-      session
-    );
-
-    await OutboxService.enqueue(
-      {
-        type: "WALLET_UPDATED",
-        dedupeKey: `tx:${adjustTx._id.toString()}:wallet:${walletId}`,
-        payload: {
-          walletId,
-          currency: wallet.currency,
-          available: wallet.available,
-          pending: wallet.pending,
-          triggerTransactionId: adjustTx._id.toString(),
-        },
-      },
-      session
-    );
+    });
 
     return { adjustmentTransactionId: adjustTx._id.toString() };
   }

@@ -87,4 +87,5 @@ export {
   type AuditEntityType,
   type AuditSeverity,
 } from "./AuditLog.js";
+export { WalletSnapshot, type IWalletSnapshot } from "./WalletSnapshot.js";
 export { Session, type ISession } from "./Session.js";

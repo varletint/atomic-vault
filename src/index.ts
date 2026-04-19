@@ -80,11 +80,9 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
 
-// CSRF double-submit cookie protection
 import { csrfProtection } from "./middleware/csrfMiddleware.js";
 app.use(csrfProtection);
 
-// Intercept social-media bot requests and serve pre-rendered OG meta HTML
 app.use(ogBotMiddleware);
 
 app.get("/", (_req: Request, res: Response) => {
