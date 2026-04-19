@@ -18,6 +18,7 @@ import {
   resetPasswordSchema,
   reasonSchema,
   updateProfileSchema,
+  adminUsersQuerySchema,
 } from "../schemas/userSchemas.js";
 
 const router = Router();
@@ -61,6 +62,16 @@ router.patch(
 );
 
 router.get("/me", authMiddleware, UserController.getMe);
+
+const adminOnly = [authMiddleware, requireRole("ADMIN")] as const;
+
+router.get(
+  "/admin",
+  ...adminOnly,
+  validate(adminUsersQuerySchema, "query"),
+  UserController.getUsersAdmin
+);
+
 router.get(
   "/:userId",
   authMiddleware,
@@ -79,8 +90,6 @@ router.patch(
   validate(updateProfileSchema),
   UserController.updateProfile
 );
-
-const adminOnly = [authMiddleware, requireRole("ADMIN")] as const;
 
 router.patch(
   "/:userId/suspend",
