@@ -19,6 +19,7 @@ import type {
   resetPasswordSchema,
   reasonSchema,
   updateProfileSchema,
+  adminUsersQuerySchema,
 } from "../schemas/userSchemas.js";
 
 const IS_PROD = process.env.NODE_ENV === "production";
@@ -331,6 +332,19 @@ export class UserController {
       success: true,
       message: "Profile updated.",
       data: user,
+    });
+  });
+
+  static getUsersAdmin = asyncHandler(async (req: Request, res: Response) => {
+    const filters = req.query as unknown as z.infer<
+      typeof adminUsersQuerySchema
+    >;
+
+    const result = await UserService.getUsersAdmin(filters);
+
+    res.status(200).json({
+      success: true,
+      data: result,
     });
   });
 }
