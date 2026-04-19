@@ -671,4 +671,46 @@ export class UserService {
       session.endSession();
     }
   }
+
+  static async getUsersAdmin(filters: {
+    page: number;
+    limit: number;
+    search?: string;
+    role?: string;
+    status?: string;
+  }): Promise<{ users: IUser[]; total: number; totalPages: number }> {
+    const { page, limit, search, role, status } = filters;
+    const query: Record<string, any> = {};
+
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+      ];
+    }
+    if (role) {
+      query.role = role;
+    }
+    if (status) {
+      query.status = status;
+    }
+
+    const skip = (page - 1) * limit;
+
+    const [users, total] = await Promise.all([
+      User.find(query)
+        .select("-password")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean<IUser[]>(),
+      User.countDocuments(query),
+    ]);
+
+    return {
+      users,
+      total,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
 }
