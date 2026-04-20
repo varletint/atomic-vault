@@ -27,3 +27,4 @@ export { generateSlug, generateUniqueSlug, slugify } from "./slug.js";
 export { formatMinorCurrency } from "./currency.js";
 export { logger } from "./logger.js";
 export { logAudit } from "./auditHelper.js";
+export { sanitizeUser, type SafeUser } from "./sanitizeUser.js";
