@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { UserService } from "../services/UserService.js";
 import { ValidationError } from "../utils/AppError.js";
-import { logger, logAudit } from "../utils/index.js";
+import { logger, logAudit, sanitizeUser } from "../utils/index.js";
 import {
   parseExpirationToMs,
   verifyEmailVerificationToken,
@@ -291,7 +291,7 @@ export class UserController {
       throw ValidationError("User not found.");
     }
 
-    res.status(200).json({ success: true, data: user });
+    res.status(200).json({ success: true, data: sanitizeUser(user) });
   });
 
   static getUserById = asyncHandler(async (req: Request, res: Response) => {
@@ -303,7 +303,10 @@ export class UserController {
       throw ValidationError("User not found.");
     }
 
-    res.status(200).json({ success: true, data: user });
+    const isAdmin = req.user?.role === "ADMIN";
+    res
+      .status(200)
+      .json({ success: true, data: isAdmin ? user : sanitizeUser(user) });
   });
 
   static getUserByEmail = asyncHandler(async (req: Request, res: Response) => {
@@ -315,7 +318,10 @@ export class UserController {
       throw ValidationError("User not found.");
     }
 
-    res.status(200).json({ success: true, data: user });
+    const isAdmin = req.user?.role === "ADMIN";
+    res
+      .status(200)
+      .json({ success: true, data: isAdmin ? user : sanitizeUser(user) });
   });
 
   static updateProfile = asyncHandler(async (req: Request, res: Response) => {
