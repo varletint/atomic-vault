@@ -26,6 +26,7 @@ import {
   ValidationError,
 } from "../utils/AppError.js";
 import { logger } from "../utils/logger.js";
+import { sanitizeUser, type SafeUser } from "../utils/sanitizeUser.js";
 
 export interface AuthTokens {
   accessToken: string;
@@ -33,7 +34,7 @@ export interface AuthTokens {
 }
 
 export interface AuthResponse {
-  user: IUser;
+  user: SafeUser;
   tokens: AuthTokens;
 }
 
@@ -161,13 +162,11 @@ export class UserService {
         });
       }
 
-      const { password: removedPassword, ...safeUser } =
-        user!.toObject() as IUser & { password?: string };
-      void removedPassword;
+      const safeUser = sanitizeUser(user!);
 
       const sessionId = randomUUID();
       const tokens = AuthTokenService.issueTokensForSession(
-        safeUser as IUser,
+        user!.toObject() as IUser,
         sessionId
       );
       await SessionService.createWithRefreshToken({
@@ -176,7 +175,7 @@ export class UserService {
         sessionId,
       });
 
-      return { user: safeUser as IUser, tokens };
+      return { user: safeUser, tokens };
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -270,12 +269,11 @@ export class UserService {
     user.markModified("auth");
     await user.save();
 
-    const safeUser = user.toObject();
-    delete (safeUser as { password?: string }).password;
+    const safeUser = sanitizeUser(user);
 
     const sessionId = randomUUID();
     const tokens = AuthTokenService.issueTokensForSession(
-      safeUser as IUser,
+      user.toObject() as IUser,
       sessionId
     );
     const createSessionInput: {
@@ -295,7 +293,7 @@ export class UserService {
     if (meta?.userAgent) createSessionInput.userAgent = meta.userAgent;
     await SessionService.createWithRefreshToken(createSessionInput);
 
-    return { user: safeUser as IUser, tokens };
+    return { user: safeUser, tokens };
   }
 
   static async requestPasswordResetOtp(email: string): Promise<void> {
@@ -510,7 +508,7 @@ export class UserService {
       await user.save({ session });
       await session.commitTransaction();
 
-      return user;
+      return sanitizeUser(user) as IUser;
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -557,7 +555,7 @@ export class UserService {
         sessionId,
       });
 
-      return { user: user.toObject() as IUser, tokens };
+      return { user: sanitizeUser(user), tokens };
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -663,7 +661,7 @@ export class UserService {
       await user.save({ session });
       await session.commitTransaction();
 
-      return user;
+      return sanitizeUser(user) as IUser;
     } catch (error) {
       await session.abortTransaction();
       throw error;
