@@ -42,7 +42,7 @@ const ALLOWED_TRANSITIONS: Record<UserStatus, UserStatus[]> = {
   UNVERIFIED: ["ACTIVE", "DEACTIVATED"],
   ACTIVE: ["SUSPENDED", "DEACTIVATED"],
   SUSPENDED: ["ACTIVE", "DEACTIVATED"],
-  DEACTIVATED: [], // terminal state
+  DEACTIVATED: [],
 };
 
 function assertValidTransition(current: UserStatus, next: UserStatus): void {
