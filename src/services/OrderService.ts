@@ -392,7 +392,8 @@ export class OrderService {
     page = 1,
     limit = 20,
     status?: OrderStatus,
-    search?: string
+    search?: string,
+    userId?: string
   ): Promise<{
     orders: IOrder[];
     total: number;
@@ -404,6 +405,7 @@ export class OrderService {
 
     const filter: Record<string, unknown> = {};
     if (status) filter.status = status;
+    if (userId) filter.user = userId;
     if (search) {
       const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       filter.$or = [
@@ -986,7 +988,6 @@ export class OrderService {
     const event = (await TrackingEvent.create(
       eventData
     )) as unknown as ITrackingEvent;
-
 
     if (order.status !== status) {
       assertValidTransition(order.status, status);

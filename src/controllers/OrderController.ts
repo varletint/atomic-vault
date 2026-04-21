@@ -91,11 +91,16 @@ export class OrderController {
   /* ── Admin: list ALL orders (paginated + filterable) ── */
 
   static getAllOrders = asyncHandler(async (req: Request, res: Response) => {
-    const { page, limit, status, search } = req.query as unknown as z.infer<
-      typeof adminOrderQuerySchema
-    >;
+    const { page, limit, status, search, userId } =
+      req.query as unknown as z.infer<typeof adminOrderQuerySchema>;
 
-    const result = await OrderService.getAllOrders(page, limit, status, search);
+    const result = await OrderService.getAllOrders(
+      page,
+      limit,
+      status,
+      search,
+      userId
+    );
     res.status(200).json({ success: true, data: result });
   });
 
