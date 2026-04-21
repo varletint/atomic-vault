@@ -419,6 +419,53 @@ export class ProductService {
     };
   }
 
+  static async getProductSalesStats(productId?: string): Promise<{
+    totalUnitsSold: number;
+    totalRevenue: number;
+    orderCount: number;
+  }> {
+    const { Order } = await import("../models/index.js");
+
+    const pipeline: mongoose.PipelineStage[] = [
+      {
+        $match: {
+          status: { $in: ["CONFIRMED", "SHIPPED", "DELIVERED"] },
+        },
+      },
+      { $unwind: "$items" as const },
+    ];
+
+    if (productId) {
+      pipeline.push({
+        $match: {
+          "items.product": new mongoose.Types.ObjectId(productId),
+        },
+      });
+    }
+
+    pipeline.push(
+      {
+        $group: {
+          _id: null,
+          totalUnitsSold: { $sum: "$items.quantity" },
+          totalRevenue: { $sum: "$items.subtotal" },
+          orderIds: { $addToSet: "$_id" },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          totalUnitsSold: 1,
+          totalRevenue: 1,
+          orderCount: { $size: "$orderIds" },
+        },
+      }
+    );
+
+    const result = await Order.aggregate(pipeline);
+    return result[0] ?? { totalUnitsSold: 0, totalRevenue: 0, orderCount: 0 };
+  }
+
   static async getCategories(): Promise<string[]> {
     return Product.distinct("category", { isActive: true });
   }
