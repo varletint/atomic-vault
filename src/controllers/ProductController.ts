@@ -128,4 +128,10 @@ export class ProductController {
     const brands = await ProductService.getBrands();
     res.status(200).json({ success: true, data: brands });
   });
+
+  static getSalesStats = asyncHandler(async (req: Request, res: Response) => {
+    const productId = req.query.productId as string | undefined;
+    const stats = await ProductService.getProductSalesStats(productId);
+    res.status(200).json({ success: true, data: stats });
+  });
 }
