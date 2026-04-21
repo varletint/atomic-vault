@@ -89,6 +89,7 @@ export const adminOrderQuerySchema = z.object({
     ])
     .optional(),
   search: z.string().max(200).optional(),
+  userId: z.string().min(1).optional(),
 });
 
 export const guestOrderQuerySchema = z.object({
