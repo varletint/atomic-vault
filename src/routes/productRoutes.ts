@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { ProductController } from "../controllers/ProductController.js";
 import { authMiddleware } from "../middleware/authMiddleware.js";
+import { requireRole } from "../middleware/requireRole.js";
 import { validate } from "../middleware/validate.js";
 import {
   createProductSchema,
@@ -11,6 +12,12 @@ const router = Router();
 
 router.get("/categories", ProductController.getCategories);
 router.get("/brands", ProductController.getBrands);
+router.get(
+  "/stats",
+  authMiddleware,
+  requireRole("ADMIN"),
+  ProductController.getSalesStats
+);
 router.get("/sku/:sku", ProductController.getProductBySku);
 router.get("/slug/:slug", ProductController.getProductBySlug);
 router.get("/", ProductController.getProducts);
