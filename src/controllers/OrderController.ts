@@ -88,8 +88,6 @@ export class OrderController {
     res.status(200).json({ success: true, data: result });
   });
 
-  /* ── Admin: list ALL orders (paginated + filterable) ── */
-
   static getAllOrders = asyncHandler(async (req: Request, res: Response) => {
     const { page, limit, status, search, userId } =
       req.query as unknown as z.infer<typeof adminOrderQuerySchema>;
@@ -103,8 +101,6 @@ export class OrderController {
     );
     res.status(200).json({ success: true, data: result });
   });
-
-  /* ── Admin: unified status update ── */
 
   static updateOrderStatus = asyncHandler(
     async (req: Request, res: Response) => {
@@ -244,15 +240,6 @@ export class OrderController {
   });
 
   static paystackWebhook = asyncHandler(async (req: Request, res: Response) => {
-    /**
-     * MIGRATION: inline signature + JSON parsing replaced by `parsePaystackWebhook`
-     * (`src/payments/webhook.ts`), HMAC via `PaystackClient`.
-     *
-     * LEGACY (reference):
-     *   const signature = req.headers["x-paystack-signature"] as string;
-     *   PaystackClient.validateWebhookSignature(rawBody, signature);
-     *   JSON.parse(rawBody.toString("utf8")); … charge.success → verifyPayment
-     */
     const signature = req.headers["x-paystack-signature"] as string | undefined;
     const rawBody =
       req.body instanceof Buffer

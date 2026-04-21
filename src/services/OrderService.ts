@@ -77,8 +77,6 @@ function assertValidTransition(current: OrderStatus, next: OrderStatus): void {
   }
 }
 
-/* Transaction FSM */
-
 const ALLOWED_TX_TRANSITIONS: Record<TransactionStatus, TransactionStatus[]> = {
   INITIATED: ["PROCESSING", "FAILED"],
   PROCESSING: ["VERIFYING", "FAILED"],
@@ -385,9 +383,6 @@ export class OrderService {
     };
   }
 
-  /**
-   * Admin: list ALL orders with optional status / search filters.
-   */
   static async getAllOrders(
     page = 1,
     limit = 20,
@@ -434,7 +429,6 @@ export class OrderService {
     };
   }
 
-  /** Public order lookup for guest orders — email must match stored guestContact. */
   static async getGuestOrderById(
     orderId: string,
     email: string
@@ -954,7 +948,6 @@ export class OrderService {
       throw NotFoundError("Order");
     }
 
-    // Fetch tracking events sorted by timestamp descending
     return TrackingEvent.find({ orderId })
       .sort({ timestamp: -1 })
       .lean<ITrackingEvent[]>();
