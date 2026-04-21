@@ -23,6 +23,7 @@ import {
   seoRoutes,
   storageRoutes,
   walletRoutes,
+  dashboardRoutes,
 } from "./routes/index.js";
 
 const app = express();
@@ -119,6 +120,7 @@ app.use("/api/cart", cartRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/wallets", walletRoutes);
 app.use("/api/storage", storageRoutes);
+app.use("/api/admin/dashboard", dashboardRoutes);
 
 app.use("/", seoRoutes);
 
