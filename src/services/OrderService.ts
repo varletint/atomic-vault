@@ -546,14 +546,24 @@ export class OrderService {
       const order = await Order.findById(orderId).session(session);
       if (!order) throw NotFoundError("Order");
 
+      const previousStatus = order.status;
+
       assertValidTransition(order.status, "CANCELLED");
 
       for (const item of order.items) {
-        await InventoryService.releaseReservation(
-          item.product.toString(),
-          item.quantity,
-          session
-        );
+        if (previousStatus === "PENDING") {
+          await InventoryService.releaseReservation(
+            item.product.toString(),
+            item.quantity,
+            session
+          );
+        } else {
+          await InventoryService.restoreCommittedStock(
+            item.product.toString(),
+            item.quantity,
+            session
+          );
+        }
       }
 
       order.status = "CANCELLED";
