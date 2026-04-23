@@ -21,6 +21,7 @@ import { OutboxProcessor } from "./OutboxProcessor.js";
 import { OutboxService } from "./OutboxService.js";
 import { LedgerService } from "./LedgerService.js";
 import { TransactionEventService } from "./TransactionEventService.js";
+import { withRetryableTransaction } from "../utils/withRetryableTransaction.js";
 import {
   ORDER_GUEST_MAX_ITEMS_TOTAL_KOBO,
   ORDER_GUEST_MAX_ITEMS_TOTAL_NGN,
@@ -539,39 +540,28 @@ export class OrderService {
   }
 
   static async cancelOrder(orderId: string, reason: string): Promise<IOrder> {
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
-    try {
+    const order = await withRetryableTransaction(async (session) => {
       const order = await Order.findById(orderId).session(session);
       if (!order) throw NotFoundError("Order");
+
+      if (order.status === "CANCELLED") return order;
 
       const previousStatus = order.status;
 
       assertValidTransition(order.status, "CANCELLED");
 
-      for (const item of order.items) {
-        if (previousStatus === "PENDING") {
-          await InventoryService.releaseReservation(
-            item.product.toString(),
-            item.quantity,
-            session
-          );
-        } else {
-          await InventoryService.restoreCommittedStock(
-            item.product.toString(),
-            item.quantity,
-            session
-          );
-        }
+      const items = order.items.map((i) => ({
+        productId: i.product.toString(),
+        quantity: i.quantity,
+      }));
+
+      if (previousStatus === "PENDING") {
+        await InventoryService.bulkReleaseReservations(items, session);
+      } else {
+        await InventoryService.bulkRestoreCommittedStock(items, session);
       }
 
-      order.status = "CANCELLED";
-      order.statusHistory.push({
-        status: "CANCELLED",
-        timestamp: new Date(),
-        note: reason,
-      });
+      order.applyCancellation(reason);
 
       await TrackingEvent.create(
         [
@@ -594,15 +584,11 @@ export class OrderService {
       );
 
       await order.save({ session });
-      await session.commitTransaction();
-      OutboxProcessor.scheduleDrain();
-      return order.toObject() as IOrder;
-    } catch (error) {
-      await session.abortTransaction();
-      throw error;
-    } finally {
-      session.endSession();
-    }
+      return order;
+    });
+
+    OutboxProcessor.scheduleDrain();
+    return order.toObject() as IOrder;
   }
 
   static async failOrder(orderId: string, reason: string): Promise<IOrder> {
