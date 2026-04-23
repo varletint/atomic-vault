@@ -408,4 +408,34 @@ export class InventoryService {
       }
     }
   }
+
+  static async bulkReleaseReservations(
+    items: { productId: string; quantity: number }[],
+    session: ClientSession
+  ): Promise<void> {
+    await Promise.all(
+      items.map((item) =>
+        InventoryService.releaseReservation(
+          item.productId,
+          item.quantity,
+          session
+        )
+      )
+    );
+  }
+
+  static async bulkRestoreCommittedStock(
+    items: { productId: string; quantity: number }[],
+    session: ClientSession
+  ): Promise<void> {
+    await Promise.all(
+      items.map((item) =>
+        InventoryService.restoreCommittedStock(
+          item.productId,
+          item.quantity,
+          session
+        )
+      )
+    );
+  }
 }
