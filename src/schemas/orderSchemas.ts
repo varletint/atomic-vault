@@ -95,3 +95,9 @@ export const adminOrderQuerySchema = z.object({
 export const guestOrderQuerySchema = z.object({
   email: z.string().email("A valid email is required"),
 });
+// admin
+// hey dont we need to know in productDetalisPage how many stock are sold, total amount of the stock per product,
+
+// total amount of all products available
+
+// do we need some type backend for this too
