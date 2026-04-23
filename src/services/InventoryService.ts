@@ -355,4 +355,57 @@ export class InventoryService {
       }
     }
   }
+
+  static async restoreCommittedStock(
+    productId: string,
+    quantity: number,
+    session?: ClientSession | null,
+    performedBy?: string
+  ): Promise<IInventory> {
+    if (quantity <= 0)
+      throw ValidationError("Quantity must be greater than zero.");
+
+    await InventoryService.ensureActiveProduct(productId, session);
+
+    const ownSession = !session;
+    const sess = session ?? (await mongoose.startSession());
+    if (ownSession) {
+      sess.startTransaction();
+    }
+
+    try {
+      const inventory = await Inventory.findOne({ product: productId }).session(
+        sess
+      );
+      if (!inventory) throw NotFoundError("Inventory");
+
+      inventory.stock += quantity;
+      await inventory.save({ session: sess });
+
+      await InventoryService.recordMovement(
+        inventory,
+        "CANCELLATION_REVERSAL",
+        quantity,
+        1,
+        sess,
+        { reason: "Order cancelled – committed stock restored" },
+        performedBy
+      );
+
+      if (ownSession) {
+        await sess.commitTransaction();
+      }
+
+      return inventory.toObject() as IInventory;
+    } catch (error) {
+      if (ownSession) {
+        await sess.abortTransaction();
+      }
+      throw error;
+    } finally {
+      if (ownSession) {
+        sess.endSession();
+      }
+    }
+  }
 }

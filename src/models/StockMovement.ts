@@ -6,6 +6,7 @@ export type StockMovementType =
   | "RESERVE"
   | "RELEASE"
   | "COMMIT"
+  | "CANCELLATION_REVERSAL"
   | "ADJUSTMENT";
 
 export interface IStockMovementReference {
@@ -55,6 +56,7 @@ const stockMovementSchema = new Schema<IStockMovement>(
         "RESERVE",
         "RELEASE",
         "COMMIT",
+        "CANCELLATION_REVERSAL",
         "ADJUSTMENT",
       ],
       required: true,
