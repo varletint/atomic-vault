@@ -1,37 +1,14 @@
 import mongoose, { Schema, type Document, type Types } from "mongoose";
 
-/**
- * Order Model
- * Represents a finalized purchase.
- *
- * This is the most critical model in the system. Every order transitions
- * through a strict state machine:
- *
- *   PENDING → CONFIRMED → SHIPPED → DELIVERED
- *       ↓         ↓
- *   CANCELLED  CANCELLED
- *       ↓         ↓
- *   (inventory   (inventory
- *    released)    released)
- *
- * PENDING:   Order created, inventory reserved, awaiting payment.
- * CONFIRMED: Payment succeeded, order is being prepared.
- * SHIPPED:   Order has left the warehouse.
- * DELIVERED: Customer received the order.
- * CANCELLED: Order was cancelled (inventory must be released).
- * FAILED:    Payment or processing failed (inventory must be released).
- *
- * The `idempotencyKey` field prevents duplicate orders if a customer
- * double-clicks the checkout button or retries due to network issues.
- */
-
-export type OrderStatus =
-  | "PENDING"
-  | "CONFIRMED"
-  | "SHIPPED"
-  | "DELIVERED"
-  | "CANCELLED"
-  | "FAILED";
+export const OrderStatus = {
+  PENDING: "PENDING",
+  CONFIRMED: "CONFIRMED",
+  SHIPPED: "SHIPPED",
+  DELIVERED: "DELIVERED",
+  CANCELLED: "CANCELLED",
+  FAILED: "FAILED",
+} as const;
+export type OrderStatus = (typeof OrderStatus)[keyof typeof OrderStatus];
 
 export type CheckoutType = "REGISTERED" | "GUEST";
 
@@ -84,6 +61,7 @@ export interface IOrder extends Document {
   }[];
   createdAt: Date;
   updatedAt: Date;
+  applyCancellation(reason: string): this;
 }
 
 const orderItemSchema = new Schema<IOrderItem>(
@@ -275,6 +253,18 @@ orderSchema.virtual("netAmount").get(function netAmount() {
   const gatewayFee = this.payment?.gatewayFee ?? 0;
   return Math.max(0, amountPaid - gatewayFee);
 });
+
+orderSchema.methods.applyCancellation = function applyCancellation(
+  reason: string
+) {
+  this.status = OrderStatus.CANCELLED;
+  this.statusHistory.push({
+    status: OrderStatus.CANCELLED,
+    timestamp: new Date(),
+    note: reason,
+  });
+  return this;
+};
 
 orderSchema.index({ user: 1, createdAt: -1 });
 orderSchema.index({ status: 1 });
