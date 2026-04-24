@@ -61,16 +61,21 @@ export class ReconciliationService {
     const wallet = await Wallet.findById(walletId).lean();
     if (!wallet) throw NotFoundError("Wallet");
 
-    /* Aggregate ledger entries by (bucket, direction) */
+    /* Aggregate ledger entries by (account, direction) */
     const agg = await LedgerEntry.aggregate<{
-      _id: { bucket: string; direction: string };
+      _id: { account: string; direction: string };
       total: number;
       count: number;
     }>([
-      { $match: { walletId: wallet._id } },
+      {
+        $match: {
+          walletId: wallet._id,
+          account: { $in: ["WALLET_AVAILABLE", "WALLET_PENDING"] },
+        },
+      },
       {
         $group: {
-          _id: { bucket: "$bucket", direction: "$direction" },
+          _id: { account: "$account", direction: "$direction" },
           total: { $sum: "$amount" },
           count: { $sum: 1 },
         },
@@ -87,8 +92,8 @@ export class ReconciliationService {
 
     for (const row of agg) {
       const signed = row._id.direction === "CREDIT" ? row.total : -row.total;
-      if (row._id.bucket === "AVAILABLE") ledgerAvailable += signed;
-      else ledgerPending += signed;
+      if (row._id.account === "WALLET_AVAILABLE") ledgerAvailable += signed;
+      else if (row._id.account === "WALLET_PENDING") ledgerPending += signed;
 
       if (row._id.direction === "DEBIT") {
         totalDebits += row.count;
@@ -108,7 +113,7 @@ export class ReconciliationService {
       walletId: wallet._id,
     });
     const unposted = await Transaction.countDocuments({
-      status: "SUCCESS",
+      status: "CONFIRMED",
       postedAt: { $exists: false },
       _id: { $nin: postedTxIds },
     });
@@ -147,7 +152,7 @@ export class ReconciliationService {
     });
 
     return Transaction.find({
-      status: "SUCCESS",
+      status: "CONFIRMED",
       postedAt: { $exists: false },
       _id: { $nin: postedTxIds },
     })
