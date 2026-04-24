@@ -2,8 +2,9 @@ import mongoose from "mongoose";
 import {
   LedgerEntry,
   Wallet,
+  AuditLog,
   type ILedgerEntryAttrs,
-  type LedgerBucket,
+  type LedgerAccount,
   type LedgerDirection,
   type LedgerEntryType,
   type ILedgerActorRef,
@@ -16,7 +17,7 @@ import { OutboxService } from "./OutboxService.js";
 export type JournalLine = {
   walletId: mongoose.Types.ObjectId;
   currency: string;
-  bucket: LedgerBucket;
+  account: LedgerAccount;
   direction: LedgerDirection;
   amount: number;
   entryType: LedgerEntryType;
@@ -82,6 +83,25 @@ export class LedgerService {
     const { session, transactionId, lines, actor, source, traceId } = params;
     const affectedWalletIds = new Set<string>();
 
+    let totalDebits = 0;
+    let totalCredits = 0;
+
+    for (const line of lines) {
+      if (!Number.isInteger(line.amount) || line.amount <= 0) {
+        throw ValidationError("Lines must have positive integer amounts.");
+      }
+      if (line.direction === "DEBIT") totalDebits += line.amount;
+      else totalCredits += line.amount;
+    }
+
+    if (totalDebits !== totalCredits) {
+      throw ValidationError(
+        `Double-entry violated: debits (${totalDebits}) !== credits (${totalCredits}) for tx ${transactionId.toString()}`
+      );
+    }
+
+    const postingId = new mongoose.Types.ObjectId();
+
     for (const line of lines) {
       const wallet = await Wallet.findById(line.walletId).session(session);
       if (!wallet) throw ValidationError("Wallet not found.");
@@ -92,24 +112,32 @@ export class LedgerService {
         throw ValidationError("Wallet currency mismatch.");
       }
 
-      const delta = deltaFor(line.direction, line.amount);
-      if (line.bucket === "AVAILABLE") {
-        const next = wallet.available + delta;
-        if (next < 0) throw ValidationError("Insufficient available balance.");
-        wallet.available = next;
-      } else {
-        const next = wallet.pending + delta;
-        if (next < 0) throw ValidationError("Insufficient pending balance.");
-        wallet.pending = next;
+      // Only impact Wallet document caching for these explicit accounts
+      if (
+        line.account === "WALLET_AVAILABLE" ||
+        line.account === "WALLET_PENDING"
+      ) {
+        const delta = deltaFor(line.direction, line.amount);
+        if (line.account === "WALLET_AVAILABLE") {
+          const next = wallet.available + delta;
+          if (next < 0)
+            throw ValidationError("Insufficient available balance.");
+          wallet.available = next;
+        } else {
+          const next = wallet.pending + delta;
+          if (next < 0) throw ValidationError("Insufficient pending balance.");
+          wallet.pending = next;
+        }
+        await wallet.save({ session });
       }
 
-      await wallet.save({ session });
-
-      const entry: ILedgerEntryAttrs = {
+      const entry: ILedgerEntryAttrs & { _id: mongoose.Types.ObjectId } = {
+        _id: new mongoose.Types.ObjectId(),
+        postingId,
         transactionId,
         walletId: wallet._id,
         currency: line.currency,
-        bucket: line.bucket,
+        account: line.account,
         direction: line.direction,
         amount: line.amount,
         entryType: line.entryType,
@@ -118,8 +146,6 @@ export class LedgerService {
         source,
         traceId,
         dedupeKey: line.dedupeKey,
-        balanceAfterAvailable: wallet.available,
-        balanceAfterPending: wallet.pending,
       };
 
       await LedgerEntry.create([entry], { session });
@@ -179,7 +205,17 @@ export class LedgerService {
       {
         walletId: storeWallet._id,
         currency,
-        bucket: "AVAILABLE",
+        account: "EXTERNAL_SETTLEMENT",
+        direction: "DEBIT",
+        amount: amountPaid,
+        entryType: "PAYMENT",
+        narration: "External gateway settlement leg",
+        dedupeKey: `tx:${transactionId}:ext`,
+      },
+      {
+        walletId: storeWallet._id,
+        currency,
+        account: "WALLET_AVAILABLE",
         direction: "CREDIT",
         amount: amountPaid,
         entryType: "PAYMENT",
@@ -191,12 +227,22 @@ export class LedgerService {
       lines.push({
         walletId: storeWallet._id,
         currency,
-        bucket: "AVAILABLE",
+        account: "WALLET_AVAILABLE",
         direction: "DEBIT",
         amount: gatewayFee,
         entryType: "FEE",
-        narration: "Payment gateway fee",
+        narration: "Payment gateway fee deduction",
         dedupeKey: `tx:${transactionId}:fee`,
+      });
+      lines.push({
+        walletId: storeWallet._id,
+        currency,
+        account: "FEES",
+        direction: "CREDIT",
+        amount: gatewayFee,
+        entryType: "FEE",
+        narration: "Payment gateway fee received",
+        dedupeKey: `tx:${transactionId}:fee:credit`,
       });
     }
 
@@ -250,10 +296,7 @@ export class LedgerService {
         "Cannot reverse a transaction that has not been posted."
       );
     }
-    if (
-      originalTx.status === "REFUNDED" ||
-      originalTx.status === "REFUND_INITIATED"
-    ) {
+    if (originalTx.status === "REVERSED") {
       throw ValidationError("Transaction has already been refunded/reversed.");
     }
 
@@ -277,7 +320,7 @@ export class LedgerService {
           user: originalTx.user,
           amount: originalTx.amount,
           currency: originalTx.currency,
-          status: "SUCCESS" as const,
+          status: "CONFIRMED" as const,
           paymentMethod: originalTx.paymentMethod,
           provider: originalTx.provider,
           providerRef: originalTx.providerRef,
@@ -297,7 +340,7 @@ export class LedgerService {
     const reversalLines: JournalLine[] = originalEntries.map((entry) => ({
       walletId: entry.walletId,
       currency: entry.currency,
-      bucket: entry.bucket as LedgerBucket,
+      account: entry.account as LedgerAccount,
       direction: (entry.direction === "CREDIT"
         ? "DEBIT"
         : "CREDIT") as LedgerDirection,
@@ -316,9 +359,31 @@ export class LedgerService {
       traceId,
     });
 
-    /* Mark original transaction as refunded */
-    originalTx.status = "REFUNDED";
-    originalTx.refundedAt = new Date();
+    await AuditLog.create(
+      [
+        {
+          action: "REVERSE_TRANSACTION",
+          actor: {
+            userId: new mongoose.Types.ObjectId(
+              actor.type === "USER" ? actor.id : undefined
+            ),
+            isSystem: actor.type === "SYSTEM",
+            role: actor.type,
+          },
+          entity: {
+            type: "Transaction",
+            id: reversalTx._id,
+          },
+          metadata: { originalTransactionId, reason },
+          severity: "warning",
+        },
+      ],
+      { session }
+    );
+
+    /* Mark original transaction as reversed */
+    originalTx.status = "REVERSED";
+    originalTx.reversedAt = new Date();
     await originalTx.save({ session });
 
     await emitOutboxEvents({
@@ -385,7 +450,7 @@ export class LedgerService {
           order: wallet._id,
           amount,
           currency: wallet.currency,
-          status: "SUCCESS" as const,
+          status: "CONFIRMED" as const,
           paymentMethod: "WALLET" as const,
           provider: "internal",
           idempotencyKey,
@@ -403,12 +468,22 @@ export class LedgerService {
       {
         walletId: wallet._id,
         currency: wallet.currency,
-        bucket: "AVAILABLE",
+        account: "REVENUE",
+        direction: direction === "CREDIT" ? "DEBIT" : "CREDIT",
+        amount,
+        entryType: "ADJUSTMENT",
+        narration: `Counterparty admin adjustment: ${reason}`,
+        dedupeKey: `adjust:${adjustTx._id.toString()}:counter`,
+      },
+      {
+        walletId: wallet._id,
+        currency: wallet.currency,
+        account: "WALLET_AVAILABLE",
         direction,
         amount,
         entryType: "ADJUSTMENT",
         narration: `Admin adjustment: ${reason}`,
-        dedupeKey: `adjust:${adjustTx._id.toString()}`,
+        dedupeKey: `adjust:${adjustTx._id.toString()}:wallet`,
       },
     ];
 
@@ -420,6 +495,33 @@ export class LedgerService {
       source,
       traceId,
     });
+
+    await AuditLog.create(
+      [
+        {
+          action: "ADJUST_WALLET",
+          actor: {
+            userId: new mongoose.Types.ObjectId(
+              actor.type === "USER" ? actor.id : undefined
+            ),
+            isSystem: actor.type === "SYSTEM",
+            role: actor.type,
+          },
+          entity: {
+            type: "Wallet",
+            id: wallet._id,
+          },
+          metadata: {
+            amount,
+            direction,
+            reason,
+            adjustTxId: adjustTx._id.toString(),
+          },
+          severity: "warning",
+        },
+      ],
+      { session }
+    );
 
     await emitOutboxEvents({
       session,
