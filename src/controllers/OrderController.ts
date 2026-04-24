@@ -232,7 +232,7 @@ export class OrderController {
     res.status(200).json({
       success: true,
       message:
-        result.transaction.status === "SUCCESS"
+        result.transaction.status === "CONFIRMED"
           ? "Payment verified successfully."
           : "Payment verification complete.",
       data: result,

@@ -55,7 +55,7 @@ export {
   LedgerEntry,
   type ILedgerEntry,
   type ILedgerEntryAttrs,
-  type LedgerBucket,
+  type LedgerAccount,
   type LedgerDirection,
   type LedgerEntryType,
   type ActorType as LedgerActorType,

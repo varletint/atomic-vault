@@ -1,6 +1,13 @@
 import mongoose, { Schema, type Document, type Types } from "mongoose";
 
-export type LedgerBucket = "AVAILABLE" | "PENDING";
+export type LedgerAccount =
+  | "WALLET_AVAILABLE"
+  | "WALLET_PENDING"
+  | "PAYABLE"
+  | "REVENUE"
+  | "FEES"
+  | "EXTERNAL_SETTLEMENT";
+
 export type LedgerDirection = "DEBIT" | "CREDIT";
 export type LedgerEntryType =
   | "PAYMENT"
@@ -18,20 +25,19 @@ export interface IActorRef {
 }
 
 export interface ILedgerEntryAttrs {
+  postingId: Types.ObjectId;
   transactionId: Types.ObjectId;
   walletId: Types.ObjectId;
   currency: string;
-  bucket: LedgerBucket;
+  account: LedgerAccount;
   direction: LedgerDirection;
-  amount: number; 
+  amount: number;
   entryType: LedgerEntryType;
   narration?: string;
   actor: IActorRef;
   source: string;
   traceId: string;
   dedupeKey?: string;
-  balanceAfterAvailable?: number;
-  balanceAfterPending?: number;
 }
 
 export interface ILedgerEntry extends Document, ILedgerEntryAttrs {
@@ -58,6 +64,11 @@ const actorSchema = new Schema<IActorRef>(
 
 const ledgerEntrySchema = new Schema<ILedgerEntry>(
   {
+    postingId: {
+      type: Schema.Types.ObjectId,
+      required: true,
+      index: true,
+    },
     transactionId: {
       type: Schema.Types.ObjectId,
       ref: "Transaction",
@@ -77,11 +88,17 @@ const ledgerEntrySchema = new Schema<ILedgerEntry>(
       uppercase: true,
       trim: true,
     },
-    bucket: {
+    account: {
       type: String,
-      enum: ["AVAILABLE", "PENDING"],
+      enum: [
+        "WALLET_AVAILABLE",
+        "WALLET_PENDING",
+        "PAYABLE",
+        "REVENUE",
+        "FEES",
+        "EXTERNAL_SETTLEMENT",
+      ],
       required: true,
-      default: "AVAILABLE",
     },
     direction: {
       type: String,
@@ -106,24 +123,12 @@ const ledgerEntrySchema = new Schema<ILedgerEntry>(
     actor: { type: actorSchema, required: true },
     source: { type: String, required: true, trim: true },
     traceId: { type: String, required: true, trim: true },
-    dedupeKey: { type: String, required: false, default: undefined },
-    balanceAfterAvailable: {
-      type: Number,
-      min: [0, "Balance after (available) cannot be negative"],
-      validate: {
-        validator: (v: unknown) =>
-          v === undefined || (typeof v === "number" && Number.isInteger(v)),
-        message: "Balance after (available) must be an integer (kobo)",
-      },
-    },
-    balanceAfterPending: {
-      type: Number,
-      min: [0, "Balance after (pending) cannot be negative"],
-      validate: {
-        validator: (v: unknown) =>
-          v === undefined || (typeof v === "number" && Number.isInteger(v)),
-        message: "Balance after (pending) must be an integer (kobo)",
-      },
+    dedupeKey: {
+      type: String,
+      required: false,
+      default: undefined,
+      unique: true,
+      sparse: true,
     },
   },
   { timestamps: true }
@@ -131,13 +136,8 @@ const ledgerEntrySchema = new Schema<ILedgerEntry>(
 
 ledgerEntrySchema.index({ walletId: 1, createdAt: 1 });
 ledgerEntrySchema.index({ transactionId: 1, createdAt: 1 });
-ledgerEntrySchema.index(
-  { walletId: 1, dedupeKey: 1 },
-  { unique: true, sparse: true }
-);
 
 export const LedgerEntry = mongoose.model<ILedgerEntry>(
   "LedgerEntry",
   ledgerEntrySchema
 );
-

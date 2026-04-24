@@ -18,6 +18,8 @@ export type AuditEntityType =
   | "TrackingEvent"
   | "OutboxEvent"
   | "System"
+  | "Ledger"
+  | "Wallet"
   | "Other";
 
 export interface IAuditLog extends Document {
@@ -81,6 +83,8 @@ const auditEntitySchema = new Schema(
         "TrackingEvent",
         "OutboxEvent",
         "System",
+        "Ledger",
+        "Wallet",
         "Other",
       ],
       required: true,
@@ -146,4 +150,3 @@ auditLogSchema.index({ "entity.type": 1, "entity.id": 1 });
 auditLogSchema.index({ createdAt: -1 });
 
 export const AuditLog = mongoose.model<IAuditLog>("AuditLog", auditLogSchema);
-

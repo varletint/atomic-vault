@@ -8,8 +8,8 @@ export interface IWallet extends Document {
   ownerType: WalletOwnerType;
   ownerId: Types.ObjectId;
   currency: string;
-  available: number; 
-  pending: number; 
+  available: number;
+  pending: number;
   status: WalletStatus;
   createdAt: Date;
   updatedAt: Date;
@@ -68,11 +68,7 @@ const walletSchema = new Schema<IWallet>(
   { timestamps: true }
 );
 
-walletSchema.index(
-  { ownerType: 1, ownerId: 1, currency: 1 },
-  { unique: true }
-);
+walletSchema.index({ ownerType: 1, ownerId: 1, currency: 1 }, { unique: true });
 walletSchema.index({ status: 1 });
 
 export const Wallet = mongoose.model<IWallet>("Wallet", walletSchema);
-

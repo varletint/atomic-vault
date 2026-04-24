@@ -107,9 +107,9 @@ export class WalletSnapshotService {
 
     for (const entry of entries) {
       const delta = entry.direction === "CREDIT" ? entry.amount : -entry.amount;
-      if (entry.bucket === "AVAILABLE") {
+      if (entry.account === "WALLET_AVAILABLE") {
         available += delta;
-      } else {
+      } else if (entry.account === "WALLET_PENDING") {
         pending += delta;
       }
     }
