@@ -6,10 +6,6 @@ import { logger } from "../utils/logger.js";
 const MONGODB_URI =
   process.env.MONGODB_URI || "mongodb://localhost:27017/order-system";
 
-/**
- * Clears queued outbox rows (PENDING / PROCESSING) so they are not delivered.
- * Set OUTBOX_CLEAR_ALL=1 to delete every document in the collection (including DONE).
- */
 async function main() {
   await mongoose.connect(MONGODB_URI, {
     bufferCommands: false,
