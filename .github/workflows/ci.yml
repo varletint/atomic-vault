@@ -31,7 +31,7 @@ jobs:
 
   auto-merge:
     needs: build
-    if: github.event_name == 'pull_request'
+    if: github.ref != 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -40,7 +40,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Enable auto-merge
+      - name: Create PR & Merge
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh pr merge ${{ github.event.number }} --squash --auto
+        run: |
+          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+
+          # 1. Automatically create a Pull Request (ignores error if one already exists)
+          gh pr create --title "Auto Merge: $BRANCH_NAME" --body "Automated PR" --base main --head "$BRANCH_NAME" || true
+
+          # 2. Automatically merge the Pull Request
+          # Tries auto-merge first. If auto-merge isn't enabled in repo settings, falls back to a direct merge.
+          gh pr merge "$BRANCH_NAME" --squash --auto || gh pr merge "$BRANCH_NAME" --squash --yes
