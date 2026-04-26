@@ -161,8 +161,8 @@ export class WalletController {
       await TransactionEventService.record({
         session,
         transactionId,
-        previousStatus: "SUCCESS",
-        newStatus: "REFUNDED",
+        previousStatus: "CONFIRMED",
+        newStatus: "REVERSED",
         reason,
         actor,
         source: "admin:reverse",
