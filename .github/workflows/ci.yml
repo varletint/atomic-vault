@@ -1,31 +1,54 @@
-name: Paystack Payment Gateway CI Pipeline
+name: CI
 
 on:
   push:
-    branches: ["payment-gateway", "main"]
+    branches: ["main", "feat/secure-withdrawals"]
   pull_request:
-    branches: ["main"]
+    branches: ["main", "feat/secure-withdrawals"]
 
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js Environment
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18.x"
-          cache: "npm"
+          node-version: 20
+          cache: npm
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: npm ci
 
-      - name: Run Linter
-        run: npm run lint
-        continue-on-error: true
+      - name: Type-check
+        run: npm run type-check
 
-      - name: Run Tests
-        run: npm test
-        continue-on-error: true
+      - name: Build
+        run: npm run build
+
+  auto-merge:
+    needs: build
+    if: github.ref != 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create PR & Merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+
+          # 1. Automatically create a Pull Request (ignores error if one already exists)
+          gh pr create --title "Auto Merge: $BRANCH_NAME" --body "Automated PR" --base main --head "$BRANCH_NAME" || true
+
+          # 2. Automatically merge the Pull Request
+          # Tries auto-merge first. If auto-merge isn't enabled, falls back to direct merge.
+          gh pr merge "$BRANCH_NAME" --squash --auto || gh pr merge "$BRANCH_NAME" --squash

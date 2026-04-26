@@ -7,3 +7,4 @@ export { default as seoRoutes } from "./seoRoutes.js";
 export { default as storageRoutes } from "./storageRoutes.js";
 export { default as walletRoutes } from "./walletRoutes.js";
 export { default as dashboardRoutes } from "./dashboardRoutes.js";
+export { default as withdrawalRoutes } from "./withdrawalRoutes.js";

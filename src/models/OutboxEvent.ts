@@ -9,7 +9,8 @@ export type OutboxEventType =
   | "ORDER_CANCELLED"
   | "INVENTORY_LOW_STOCK"
   | "TRANSACTION_POSTED"
-  | "WALLET_UPDATED";
+  | "WALLET_UPDATED"
+  | "WITHDRAWAL_RESERVED";
 
 export interface IOutboxEvent extends Document {
   _id: Types.ObjectId;
@@ -38,6 +39,7 @@ const outboxEventSchema = new Schema<IOutboxEvent>(
         "INVENTORY_LOW_STOCK",
         "TRANSACTION_POSTED",
         "WALLET_UPDATED",
+        "WITHDRAWAL_RESERVED",
       ],
       required: true,
       index: true,

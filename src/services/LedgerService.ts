@@ -538,4 +538,195 @@ export class LedgerService {
 
     return { adjustmentTransactionId: adjustTx._id.toString() };
   }
+
+  /* ── Withdrawal posting methods ── */
+
+  /**
+   * Reserve funds for withdrawal: DR WALLET_AVAILABLE / CR WALLET_PENDING.
+   * Called synchronously during initiation (inside Mongo session).
+   */
+  static async postWithdrawalReserve(params: {
+    session: mongoose.ClientSession;
+    transactionId: string;
+    walletId: string;
+    amount: number;
+    currency: string;
+    actor: ILedgerActorRef;
+    source: string;
+    traceId: string;
+  }): Promise<void> {
+    const {
+      session,
+      transactionId,
+      walletId,
+      amount,
+      currency,
+      actor,
+      source,
+      traceId,
+    } = params;
+
+    if (!Number.isInteger(amount) || amount < 1) {
+      throw ValidationError(
+        "Withdrawal amount must be a positive integer (kobo)."
+      );
+    }
+
+    const walletOid = new mongoose.Types.ObjectId(walletId);
+    const txOid = new mongoose.Types.ObjectId(transactionId);
+
+    const lines: JournalLine[] = [
+      {
+        walletId: walletOid,
+        currency,
+        account: "WALLET_AVAILABLE",
+        direction: "DEBIT",
+        amount,
+        entryType: "TRANSFER",
+        narration: "Withdrawal reserve — funds locked",
+        dedupeKey: `withdraw:${transactionId}:reserve:debit`,
+      },
+      {
+        walletId: walletOid,
+        currency,
+        account: "WALLET_PENDING",
+        direction: "CREDIT",
+        amount,
+        entryType: "TRANSFER",
+        narration: "Withdrawal reserve — funds pending",
+        dedupeKey: `withdraw:${transactionId}:reserve:credit`,
+      },
+    ];
+
+    await this.postJournalLines({
+      session,
+      transactionId: txOid,
+      lines,
+      actor,
+      source,
+      traceId,
+    });
+  }
+
+  /**
+   * Confirm withdrawal: DR WALLET_PENDING / CR EXTERNAL_SETTLEMENT.
+   * Called when Paystack webhook confirms success.
+   */
+  static async postWithdrawalConfirm(params: {
+    session: mongoose.ClientSession;
+    transactionId: string;
+    walletId: string;
+    amount: number;
+    currency: string;
+    actor: ILedgerActorRef;
+    source: string;
+    traceId: string;
+  }): Promise<void> {
+    const {
+      session,
+      transactionId,
+      walletId,
+      amount,
+      currency,
+      actor,
+      source,
+      traceId,
+    } = params;
+
+    const walletOid = new mongoose.Types.ObjectId(walletId);
+    const txOid = new mongoose.Types.ObjectId(transactionId);
+
+    const lines: JournalLine[] = [
+      {
+        walletId: walletOid,
+        currency,
+        account: "WALLET_PENDING",
+        direction: "DEBIT",
+        amount,
+        entryType: "TRANSFER",
+        narration: "Withdrawal confirmed — pending released",
+        dedupeKey: `withdraw:${transactionId}:confirm:debit`,
+      },
+      {
+        walletId: walletOid,
+        currency,
+        account: "EXTERNAL_SETTLEMENT",
+        direction: "CREDIT",
+        amount,
+        entryType: "TRANSFER",
+        narration: "Withdrawal confirmed — settled externally",
+        dedupeKey: `withdraw:${transactionId}:confirm:credit`,
+      },
+    ];
+
+    await this.postJournalLines({
+      session,
+      transactionId: txOid,
+      lines,
+      actor,
+      source,
+      traceId,
+    });
+  }
+
+  /**
+   * Fail a withdrawal: DR WALLET_PENDING / CR WALLET_AVAILABLE.
+   * Returns reserved funds back to available balance.
+   */
+  static async postWithdrawalFailure(params: {
+    session: mongoose.ClientSession;
+    transactionId: string;
+    walletId: string;
+    amount: number;
+    currency: string;
+    actor: ILedgerActorRef;
+    source: string;
+    traceId: string;
+  }): Promise<void> {
+    const {
+      session,
+      transactionId,
+      walletId,
+      amount,
+      currency,
+      actor,
+      source,
+      traceId,
+    } = params;
+
+    const walletOid = new mongoose.Types.ObjectId(walletId);
+    const txOid = new mongoose.Types.ObjectId(transactionId);
+
+    const lines: JournalLine[] = [
+      {
+        walletId: walletOid,
+        currency,
+        account: "WALLET_PENDING",
+        direction: "DEBIT",
+        amount,
+        entryType: "TRANSFER",
+        narration: "Withdrawal failed — pending released",
+        dedupeKey: `withdraw:${transactionId}:fail:debit`,
+      },
+      {
+        walletId: walletOid,
+        currency,
+        account: "WALLET_AVAILABLE",
+        direction: "CREDIT",
+        amount,
+        entryType: "TRANSFER",
+        narration: "Withdrawal failed — funds returned",
+        dedupeKey: `withdraw:${transactionId}:fail:credit`,
+      },
+    ];
+
+    await this.postJournalLines({
+      session,
+      transactionId: txOid,
+      lines,
+      actor,
+      source,
+      traceId,
+    });
+  }
 }

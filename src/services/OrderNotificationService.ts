@@ -14,15 +14,7 @@ import { renderOrderDeliveredEmail } from "./templates/orderDeliveredEmail.js";
 import { renderOrderShippedEmail } from "./templates/orderShippedEmail.js";
 import { renderOrderCancelledEmail } from "./templates/orderCancelledEmail.js";
 
-/**
- * Sends transactional emails for order lifecycle events.
- * Invoked by the OutboxProcessor for reliable, retried delivery.
- */
 export class OrderNotificationService {
-  /**
-   * Handles ORDER_CONFIRMED: generates invoice via OrderCompletionService,
-   * then sends the rich confirmation email with invoice link.
-   */
   static async handleOrderConfirmed(payload: {
     orderId: string;
     paymentReference?: string;
@@ -32,7 +24,7 @@ export class OrderNotificationService {
 
     const customerEmail = await this.resolveCustomerEmail(order);
 
-    // Generate invoice PDF (idempotent)
+    // Generate invoice PDF
     const { invoiceUrl } = await OrderCompletionService.handleOrderCompleted({
       orderId: payload.orderId,
       paymentReference: payload.paymentReference,
@@ -49,9 +41,6 @@ export class OrderNotificationService {
     });
   }
 
-  /**
-   * Handles ORDER_DELIVERED: sends the delivery confirmation email.
-   */
   static async handleOrderDelivered(payload: {
     orderId: string;
   }): Promise<void> {
@@ -70,9 +59,6 @@ export class OrderNotificationService {
     });
   }
 
-  /**
-   * Handles ORDER_SHIPPED: sends the shipped notification email.
-   */
   static async handleOrderShipped(payload: {
     orderId: string;
     note?: string;
@@ -92,9 +78,6 @@ export class OrderNotificationService {
     });
   }
 
-  /**
-   * Handles ORDER_CANCELLED: sends the cancelled order email.
-   */
   static async handleOrderCancelled(payload: {
     orderId: string;
     reason?: string;
@@ -113,10 +96,6 @@ export class OrderNotificationService {
       email,
     });
   }
-
-  /* ------------------------------------------------------------------ */
-  /*  Private helpers                                                    */
-  /* ------------------------------------------------------------------ */
 
   private static async sendAndLog(params: {
     orderId: string;

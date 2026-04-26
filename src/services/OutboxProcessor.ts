@@ -163,6 +163,22 @@ export class OutboxProcessor {
       return;
     }
 
+    if (event.type === "WITHDRAWAL_RESERVED") {
+      const withdrawalPayload = payload as unknown as {
+        transactionId?: string;
+      };
+      if (!withdrawalPayload.transactionId) {
+        throw new Error(
+          "WITHDRAWAL_RESERVED outbox payload missing transactionId."
+        );
+      }
+      const { WithdrawalService } = await import("./WithdrawalService.js");
+      await WithdrawalService.processWithdrawalTransfer(
+        withdrawalPayload.transactionId
+      );
+      return;
+    }
+
     throw new Error(`Unhandled outbox event type: ${event.type}`);
   }
 }

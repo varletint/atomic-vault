@@ -9,8 +9,6 @@ import {
 import { NotFoundError, ValidationError } from "../utils/AppError.js";
 import { LedgerService } from "./LedgerService.js";
 
-/* Types */
-
 export type ReconciliationReport = {
   walletId: string;
   currency: string;
@@ -47,14 +45,7 @@ export type RepairReport = {
   summary: { total: number; repaired: number; skipped: number; errors: number };
 };
 
-/* Service */
-
 export class ReconciliationService {
-  /**
-   * Read-only wallet reconciliation.
-   * Compares on-record wallet balances against the computed sum
-   * of all ledger entries for that wallet.
-   */
   static async reconcileWallet(
     walletId: string
   ): Promise<ReconciliationReport> {
@@ -108,7 +99,6 @@ export class ReconciliationService {
     const driftAvailable = wallet.available - ledgerAvailable;
     const driftPending = wallet.pending - ledgerPending;
 
-    /* Only count unposted transactions for THIS wallet */
     const postedTxIds = await LedgerEntry.distinct("transactionId", {
       walletId: wallet._id,
     });
@@ -137,10 +127,6 @@ export class ReconciliationService {
     };
   }
 
-  /**
-   * Find SUCCESS transactions that were never posted to the ledger
-   * for a specific wallet.
-   */
   static async findUnpostedTransactions(
     walletId: string
   ): Promise<ITransaction[]> {
@@ -160,11 +146,6 @@ export class ReconciliationService {
       .lean<ITransaction[]>();
   }
 
-  /**
-   * Auto-repair: post missing ledger entries for unposted SUCCESS
-   * transactions. Each repair runs in its own session so a single
-   * failure does not block the rest.
-   */
   static async repairUnposted(params: {
     walletId: string;
     actor: ILedgerActorRef;
@@ -233,7 +214,6 @@ export class ReconciliationService {
       } catch (err: unknown) {
         await session.abortTransaction();
 
-        /* E11000 duplicate key on dedupeKey → ledger entry already exists */
         const code = (err as { code?: number }).code;
         if (code === 11000) {
           results.push({
