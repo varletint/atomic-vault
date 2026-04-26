@@ -78,13 +78,13 @@ function assertValidTransition(current: OrderStatus, next: OrderStatus): void {
 }
 
 const ALLOWED_TX_TRANSITIONS: Record<TransactionStatus, TransactionStatus[]> = {
-  INITIATED: ["PROCESSING", "FAILED"],
-  PROCESSING: ["VERIFYING", "FAILED"],
-  VERIFYING: ["SUCCESS", "FAILED", "PROCESSING"],
-  SUCCESS: ["REFUND_INITIATED"],
+  INITIATED: ["RESERVED", "FAILED"],
+  RESERVED: ["PROCESSING", "FAILED"],
+  PROCESSING: ["UNKNOWN", "CONFIRMED", "FAILED"],
+  UNKNOWN: ["CONFIRMED", "FAILED"],
+  CONFIRMED: ["REVERSED"],
   FAILED: [],
-  REFUND_INITIATED: ["REFUNDED", "FAILED"],
-  REFUNDED: [],
+  REVERSED: [],
 };
 
 function assertValidTxTransition(
@@ -753,9 +753,9 @@ export class OrderService {
     const claimed = await Transaction.findOneAndUpdate(
       {
         idempotencyKey: reference,
-        status: { $nin: ["SUCCESS", "FAILED", "VERIFYING"] },
+        status: { $nin: ["CONFIRMED", "FAILED", "UNKNOWN"] },
       },
-      { $set: { status: "VERIFYING" } },
+      { $set: { status: "UNKNOWN" } },
       { new: true }
     );
 
@@ -788,7 +788,7 @@ export class OrderService {
 
       if (result.success) {
         assertValidTransition(order.status, "CONFIRMED");
-        assertValidTxTransition(freshClaimed.status, "SUCCESS");
+        assertValidTxTransition(freshClaimed.status, "CONFIRMED");
 
         const amountPaid =
           typeof result.amountPaid === "number"
@@ -797,7 +797,7 @@ export class OrderService {
         const gatewayFee =
           typeof result.gatewayFee === "number" ? result.gatewayFee : 0;
 
-        freshClaimed.status = "SUCCESS";
+        freshClaimed.status = "CONFIRMED";
         freshClaimed.paidAt = result.paidAt
           ? new Date(result.paidAt)
           : new Date();
@@ -808,8 +808,8 @@ export class OrderService {
         await TransactionEventService.record({
           session,
           transactionId: freshClaimed._id.toString(),
-          previousStatus: "VERIFYING",
-          newStatus: "SUCCESS",
+          previousStatus: "UNKNOWN",
+          newStatus: "CONFIRMED",
           reason: "payment_confirmed",
           actor: { type: "SYSTEM" },
           source: "payment:verify",
@@ -887,7 +887,7 @@ export class OrderService {
         await TransactionEventService.record({
           session,
           transactionId: freshClaimed._id.toString(),
-          previousStatus: "VERIFYING",
+          previousStatus: "UNKNOWN",
           newStatus: "FAILED",
           reason: "payment_failed",
           actor: { type: "SYSTEM" },
@@ -934,7 +934,7 @@ export class OrderService {
     } catch (error) {
       await session.abortTransaction();
       await Transaction.updateOne(
-        { _id: claimed._id, status: "VERIFYING" },
+        { _id: claimed._id, status: "UNKNOWN" },
         { $set: { status: "PROCESSING" } }
       );
       throw error;
