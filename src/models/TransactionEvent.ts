@@ -50,12 +50,12 @@ const transactionEventSchema = new Schema<ITransactionEvent>(
       type: String,
       enum: [
         "INITIATED",
+        "RESERVED",
         "PROCESSING",
-        "VERIFYING",
-        "SUCCESS",
+        "UNKNOWN",
+        "CONFIRMED",
         "FAILED",
-        "REFUND_INITIATED",
-        "REFUNDED",
+        "REVERSED",
       ],
       required: true,
     },
@@ -63,12 +63,12 @@ const transactionEventSchema = new Schema<ITransactionEvent>(
       type: String,
       enum: [
         "INITIATED",
+        "RESERVED",
         "PROCESSING",
-        "VERIFYING",
-        "SUCCESS",
+        "UNKNOWN",
+        "CONFIRMED",
         "FAILED",
-        "REFUND_INITIATED",
-        "REFUNDED",
+        "REVERSED",
       ],
       required: true,
     },
@@ -88,4 +88,3 @@ export const TransactionEvent = mongoose.model<ITransactionEvent>(
   "TransactionEvent",
   transactionEventSchema
 );
-

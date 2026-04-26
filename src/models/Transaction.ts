@@ -2,12 +2,12 @@ import mongoose, { Schema, type Document, type Types } from "mongoose";
 
 export type TransactionStatus =
   | "INITIATED"
+  | "RESERVED"
   | "PROCESSING"
-  | "VERIFYING"
-  | "SUCCESS"
+  | "UNKNOWN"
+  | "CONFIRMED"
   | "FAILED"
-  | "REFUND_INITIATED"
-  | "REFUNDED";
+  | "REVERSED";
 
 export type TransactionType =
   | "ORDER_PAYMENT"
@@ -31,20 +31,20 @@ export interface ITransaction extends Document {
   order: Types.ObjectId;
   /** Absent for guest checkout orders */
   user?: Types.ObjectId | null;
-  amount: number; 
+  amount: number;
   currency: string;
   status: TransactionStatus;
   paymentMethod: PaymentMethod;
-  provider: string; 
-  providerRef?: string; 
-  gatewayFee?: number; 
-  
+  provider: string;
+  providerRef?: string;
+  gatewayFee?: number;
+
   postedAt?: Date;
   idempotencyKey: string;
-  metadata?: Record<string, unknown>; 
+  metadata?: Record<string, unknown>;
   failureReason?: string;
   paidAt?: Date;
-  refundedAt?: Date;
+  reversedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -95,12 +95,12 @@ const transactionSchema = new Schema<ITransaction>(
       type: String,
       enum: [
         "INITIATED",
+        "RESERVED",
         "PROCESSING",
-        "VERIFYING",
-        "SUCCESS",
+        "UNKNOWN",
+        "CONFIRMED",
         "FAILED",
-        "REFUND_INITIATED",
-        "REFUNDED",
+        "REVERSED",
       ],
       default: "INITIATED",
       required: true,
@@ -142,18 +142,18 @@ const transactionSchema = new Schema<ITransaction>(
     metadata: { type: Schema.Types.Mixed },
     failureReason: { type: String },
     paidAt: { type: Date },
-    refundedAt: { type: Date },
+    reversedAt: { type: Date },
   },
   {
     timestamps: true,
   }
 );
 
-transactionSchema.index({ order: 1 }); 
-transactionSchema.index({ user: 1, createdAt: -1 }); 
-transactionSchema.index({ status: 1 }); 
-transactionSchema.index({ providerRef: 1 }, { sparse: true }); 
-transactionSchema.index({ idempotencyKey: 1 }, { unique: true }); 
+transactionSchema.index({ order: 1 });
+transactionSchema.index({ user: 1, createdAt: -1 });
+transactionSchema.index({ status: 1 });
+transactionSchema.index({ providerRef: 1 }, { sparse: true });
+transactionSchema.index({ idempotencyKey: 1 }, { unique: true });
 transactionSchema.index({ type: 1, createdAt: -1 });
 transactionSchema.index({ postedAt: -1 }, { sparse: true });
 
