@@ -50,5 +50,5 @@ jobs:
           gh pr create --title "Auto Merge: $BRANCH_NAME" --body "Automated PR" --base main --head "$BRANCH_NAME" || true
 
           # 2. Automatically merge the Pull Request
-          # Tries auto-merge first. If auto-merge isn't enabled in repo settings, falls back to a direct merge.
-          gh pr merge "$BRANCH_NAME" --squash --auto || gh pr merge "$BRANCH_NAME" --squash --yes
+          # Tries auto-merge first. If auto-merge isn't enabled, falls back to direct merge.
+          gh pr merge "$BRANCH_NAME" --squash --auto || gh pr merge "$BRANCH_NAME" --squash
