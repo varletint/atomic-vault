@@ -1,4 +1,3 @@
-
 export { default as userRoutes } from "./userRoutes.js";
 export { default as productRoutes } from "./productRoutes.js";
 export { default as inventoryRoutes } from "./inventoryRoutes.js";
@@ -7,3 +6,4 @@ export { default as orderRoutes } from "./orderRoutes.js";
 export { default as seoRoutes } from "./seoRoutes.js";
 export { default as storageRoutes } from "./storageRoutes.js";
 export { default as walletRoutes } from "./walletRoutes.js";
+export { default as withdrawalRoutes } from "./withdrawalRoutes.js";
