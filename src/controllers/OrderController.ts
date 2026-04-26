@@ -232,7 +232,7 @@ export class OrderController {
     res.status(200).json({
       success: true,
       message:
-        result.transaction.status === "SUCCESS"
+        result.transaction.status === "CONFIRMED"
           ? "Payment verified successfully."
           : "Payment verification complete.",
       data: result,
@@ -264,6 +264,27 @@ export class OrderController {
 
     if (parsed.event === "charge.success" && parsed.reference) {
       await OrderService.verifyPayment(parsed.reference);
+    }
+
+    /* ── Transfer webhook events (withdrawals) ── */
+    if (parsed.reference) {
+      if (parsed.event === "transfer.success") {
+        const { WithdrawalService } = await import(
+          "../services/WithdrawalService.js"
+        );
+        await WithdrawalService.confirmWithdrawal(parsed.reference);
+      } else if (
+        parsed.event === "transfer.failed" ||
+        parsed.event === "transfer.reversed"
+      ) {
+        const { WithdrawalService } = await import(
+          "../services/WithdrawalService.js"
+        );
+        await WithdrawalService.failWithdrawal(
+          parsed.reference,
+          `Webhook: ${parsed.event}`
+        );
+      }
     }
 
     res.status(200).json({ success: true });
