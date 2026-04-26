@@ -23,6 +23,7 @@ import {
   seoRoutes,
   storageRoutes,
   walletRoutes,
+  withdrawalRoutes,
 } from "./routes/index.js";
 
 const app = express();
@@ -97,6 +98,7 @@ app.get("/", (_req: Request, res: Response) => {
       cart: "/api/cart",
       orders: "/api/orders",
       wallets: "/api/wallets",
+      withdrawals: "/api/withdrawals",
       storage: "/api/storage",
     },
   });
@@ -118,6 +120,7 @@ app.use("/api/inventory", inventoryRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/wallets", walletRoutes);
+app.use("/api/withdrawals", withdrawalRoutes);
 app.use("/api/storage", storageRoutes);
 
 app.use("/", seoRoutes);
