@@ -1,14 +1,3 @@
-/**
- * AppError
- *
- * Custom error class for operational errors (expected things that go wrong).
- * Carries an HTTP status code and a machine-readable error code so the
- * global error handler can format the response without string-parsing.
- *
- * Usage:
- *   throw new AppError("User not found.", 404, "NOT_FOUND");
- *   throw new AppError("Illegal transition.", 409, "FSM_VIOLATION");
- */
 export class AppError extends Error {
   public readonly statusCode: number;
   public readonly code: string;
@@ -18,14 +7,10 @@ export class AppError extends Error {
     super(message);
     this.statusCode = statusCode;
     this.code = code;
-    this.isOperational = true; // distinguishes known errors from unexpected crashes
-    Object.setPrototypeOf(this, AppError.prototype); // fix instanceof in TS
+    this.isOperational = true;
+    Object.setPrototypeOf(this, AppError.prototype);
   }
 }
-
-// ─────────────────────────────────────────────
-// Factory helpers for common error types
-// ─────────────────────────────────────────────
 
 export const NotFoundError = (resource: string) =>
   new AppError(`${resource} not found.`, 404, "NOT_FOUND");
