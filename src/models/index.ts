@@ -66,6 +66,7 @@ export {
   OutboxEvent,
   type IOutboxEvent,
   type OutboxEventType,
+  type OutboxPayloadMap,
   type OutboxStatus,
 } from "./OutboxEvent.js";
 export {
