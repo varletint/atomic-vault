@@ -19,6 +19,15 @@ async function main() {
     process.env.OUTBOX_CLEAR_ALL === "1" ||
     process.env.OUTBOX_CLEAR_ALL === "true";
 
+  if (clearAll && process.env.NODE_ENV === "production") {
+    logger.error(
+      "Refusing to clear ALL outbox events in production. Unset OUTBOX_CLEAR_ALL or run in a non-production environment."
+    );
+    process.exitCode = 1;
+    await mongoose.disconnect();
+    return;
+  }
+
   const filter = clearAll ? {} : { status: { $in: ["PENDING", "PROCESSING"] } };
 
   const result = await OutboxEvent.deleteMany(filter);
