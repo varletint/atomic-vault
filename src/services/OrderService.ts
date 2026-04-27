@@ -773,7 +773,6 @@ export class OrderService {
     session.startTransaction();
 
     try {
-      /* Re-fetch claimed inside the session for snapshot isolation */
       const freshClaimed = await Transaction.findById(claimed._id).session(
         session
       );
@@ -864,7 +863,6 @@ export class OrderService {
             dedupeKey: `order:${order._id.toString()}:confirmed`,
             payload: {
               orderId: order._id.toString(),
-              transactionId: freshClaimed._id.toString(),
               paymentReference: reference,
             },
           },

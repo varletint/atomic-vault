@@ -12,17 +12,44 @@ export type OutboxEventType =
   | "WALLET_UPDATED"
   | "WITHDRAWAL_RESERVED";
 
+export type OutboxPayloadMap = {
+  ORDER_CONFIRMED: { orderId: string; paymentReference?: string };
+  ORDER_DELIVERED: { orderId: string };
+  ORDER_SHIPPED: { orderId: string; note?: string };
+  ORDER_CANCELLED: { orderId: string; reason?: string };
+  INVENTORY_LOW_STOCK: {
+    productId: string;
+    stock: number;
+    reserved: number;
+    available: number;
+    threshold: number;
+  };
+  TRANSACTION_POSTED: Record<string, unknown>;
+  WALLET_UPDATED: Record<string, unknown>;
+  WITHDRAWAL_RESERVED: {
+    transactionId: string;
+    walletId: string;
+    amount: number;
+    currency: string;
+    bankCode: string;
+    accountNumber: string;
+    accountName: string;
+    reason: string;
+  };
+};
+
 export interface IOutboxEvent extends Document {
   _id: Types.ObjectId;
   type: OutboxEventType;
   dedupeKey: string;
-  payload: Record<string, unknown>;
+  payload: OutboxPayloadMap[OutboxEventType];
   status: OutboxStatus;
   attempts: number;
   nextRunAt: Date;
   lockedAt?: Date;
   lockId?: string;
   lastError?: string;
+  completedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -58,6 +85,7 @@ const outboxEventSchema = new Schema<IOutboxEvent>(
     lockedAt: { type: Date, required: false, default: undefined },
     lockId: { type: String, required: false, default: undefined },
     lastError: { type: String, required: false, default: undefined },
+    completedAt: { type: Date, required: false, default: undefined },
   },
   { timestamps: true }
 );
@@ -65,6 +93,10 @@ const outboxEventSchema = new Schema<IOutboxEvent>(
 outboxEventSchema.index({ type: 1, dedupeKey: 1 }, { unique: true });
 outboxEventSchema.index({ status: 1, nextRunAt: 1 });
 outboxEventSchema.index({ lockedAt: 1 }, { sparse: true });
+outboxEventSchema.index(
+  { completedAt: 1 },
+  { expireAfterSeconds: 30 * 24 * 3600, sparse: true }
+);
 
 export const OutboxEvent = mongoose.model<IOutboxEvent>(
   "OutboxEvent",

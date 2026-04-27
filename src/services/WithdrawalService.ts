@@ -15,17 +15,43 @@ import {
 } from "../payments/paystack-transfer.js";
 import { CircuitBreaker } from "../utils/CircuitBreaker.js";
 import { retryWithBackoff } from "../utils/retryWithBackoff.js";
-import { ValidationError } from "../utils/AppError.js";
+import { ValidationError, AppError } from "../utils/AppError.js";
 import { logger } from "../utils/logger.js";
 
 const WITHDRAWAL_RATE_LIMIT = 1; // max per wallet per hour
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+
+function isTransientFailure(err: unknown): boolean {
+  if (
+    err instanceof AppError &&
+    err.statusCode >= 400 &&
+    err.statusCode < 500
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function isRetryableError(err: unknown): boolean {
+  const msg = String(err).toLowerCase();
+  return (
+    msg.includes("timeout") ||
+    msg.includes("econnreset") ||
+    msg.includes("etimedout") ||
+    msg.includes("econnrefused") ||
+    msg.includes("socket hang up") ||
+    msg.includes("network") ||
+    msg.includes("5")
+  );
+}
 
 const transferCircuitBreaker = new CircuitBreaker({
   name: "PaystackTransfer",
   failureThreshold: 5,
   resetTimeoutMs: 30_000,
   windowMs: 60_000,
+  timeoutMs: 15_000,
+  isFailure: isTransientFailure,
 });
 
 const ALLOWED_WITHDRAWAL_TRANSITIONS: Partial<
@@ -253,7 +279,11 @@ export class WithdrawalService {
                 accountNumber: meta.accountNumber,
                 name: meta.accountName,
               }),
-            { maxRetries: 2, name: "createRecipient" }
+            {
+              maxRetries: 2,
+              name: "createRecipient",
+              retryable: isRetryableError,
+            }
           )
         );
         recipientCode = recipient.recipientCode;
@@ -276,11 +306,14 @@ export class WithdrawalService {
                 reason: meta.reason,
                 currency: tx.currency,
               }),
-            { maxRetries: 2, name: "initiateTransfer" }
+            {
+              maxRetries: 2,
+              name: "initiateTransfer",
+              retryable: isRetryableError,
+            }
           )
       );
 
-      /* Transition to PROCESSING */
       const session = await mongoose.startSession();
       session.startTransaction();
       try {

@@ -24,7 +24,6 @@ export class OrderNotificationService {
 
     const customerEmail = await this.resolveCustomerEmail(order);
 
-    // Generate invoice PDF
     const { invoiceUrl } = await OrderCompletionService.handleOrderCompleted({
       orderId: payload.orderId,
       paymentReference: payload.paymentReference,
@@ -103,6 +102,14 @@ export class OrderNotificationService {
     to: string;
     email: { subject: string; html: string; text: string };
   }): Promise<void> {
+    const alreadySent = await NotificationLog.findOne({
+      orderId: params.orderId,
+      type: params.type,
+      channel: "EMAIL",
+      status: "SENT",
+    }).lean();
+    if (alreadySent) return;
+
     const attempt = await NotificationLog.countDocuments({
       orderId: params.orderId,
       type: params.type,
