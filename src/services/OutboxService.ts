@@ -1,12 +1,16 @@
 import mongoose from "mongoose";
-import { OutboxEvent, type OutboxEventType } from "../models/index.js";
+import {
+  OutboxEvent,
+  type OutboxEventType,
+  type OutboxPayloadMap,
+} from "../models/index.js";
 
 export class OutboxService {
-  static async enqueue(
+  static async enqueue<T extends OutboxEventType>(
     params: {
-      type: OutboxEventType;
+      type: T;
       dedupeKey: string;
-      payload: Record<string, unknown>;
+      payload: OutboxPayloadMap[T];
       nextRunAt?: Date;
     },
     session?: mongoose.ClientSession
@@ -23,12 +27,9 @@ export class OutboxService {
     try {
       await OutboxEvent.create([doc], session ? { session } : undefined);
     } catch (err) {
-      // Dedupe: if we already queued this event, we treat it as success.
-      // Mongo duplicate key error codes: 11000
       const e = err as { code?: number };
       if (e?.code === 11000) return;
       throw err;
     }
   }
 }
-
