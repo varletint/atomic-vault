@@ -1,4 +1,4 @@
-name: Ledger Posting Logic
+name: CI Pipeline
 
 on:
   push:
