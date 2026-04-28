@@ -1,4 +1,4 @@
-name: hardening outbox process
+name: CI Pipeline
 
 on:
   push:
