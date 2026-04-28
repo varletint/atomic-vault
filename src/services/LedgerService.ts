@@ -113,6 +113,7 @@ export class LedgerService {
       }
 
       // Only impact Wallet document caching for these explicit accounts
+      let balanceAfter: number | undefined;
       if (
         line.account === "WALLET_AVAILABLE" ||
         line.account === "WALLET_PENDING"
@@ -123,10 +124,12 @@ export class LedgerService {
           if (next < 0)
             throw ValidationError("Insufficient available balance.");
           wallet.available = next;
+          balanceAfter = wallet.available;
         } else {
           const next = wallet.pending + delta;
           if (next < 0) throw ValidationError("Insufficient pending balance.");
           wallet.pending = next;
+          balanceAfter = wallet.pending;
         }
         await wallet.save({ session });
       }
@@ -142,6 +145,7 @@ export class LedgerService {
         amount: line.amount,
         entryType: line.entryType,
         narration: line.narration,
+        balanceAfter,
         actor,
         source,
         traceId,

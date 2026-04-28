@@ -34,6 +34,7 @@ export interface ILedgerEntryAttrs {
   amount: number;
   entryType: LedgerEntryType;
   narration?: string;
+  balanceAfter?: number;
   actor: IActorRef;
   source: string;
   traceId: string;
@@ -120,6 +121,7 @@ const ledgerEntrySchema = new Schema<ILedgerEntry>(
       required: true,
     },
     narration: { type: String, trim: true },
+    balanceAfter: { type: Number, required: false, default: undefined },
     actor: { type: actorSchema, required: true },
     source: { type: String, required: true, trim: true },
     traceId: { type: String, required: true, trim: true },

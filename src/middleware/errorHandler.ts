@@ -2,17 +2,11 @@ import type { Request, Response, NextFunction } from "express";
 import { AppError } from "../utils/AppError.js";
 import { logger } from "../utils/logger.js";
 
-/**
- * Global Error Handler Middleware
- */
-
-// Mongoose validation error shape
 interface MongooseValidationError extends Error {
   name: "ValidationError";
   errors: Record<string, { message: string }>;
 }
 
-// MongoDB duplicate key error shape
 interface MongoDuplicateKeyError extends Error {
   code: number;
   keyPattern?: Record<string, unknown>;
@@ -38,7 +32,6 @@ export const errorHandler = (
   res: Response,
   _next: NextFunction
 ): void => {
-  // ── 1. Our own AppError
   if (err instanceof AppError) {
     res.status(err.statusCode).json({
       success: false,
@@ -48,7 +41,6 @@ export const errorHandler = (
     return;
   }
 
-  // ── 2. Mongoose validation error ──
   if (isMongooseValidationError(err)) {
     const messages = Object.values(err.errors).map((e) => e.message);
     res.status(400).json({
@@ -60,7 +52,6 @@ export const errorHandler = (
     return;
   }
 
-  // ── 3. MongoDB duplicate key error (E11000) ──
   if (isMongoDuplicateKeyError(err)) {
     const field = err.keyPattern
       ? Object.keys(err.keyPattern).join(", ")

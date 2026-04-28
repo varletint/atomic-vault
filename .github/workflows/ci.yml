@@ -1,4 +1,4 @@
-name: hardening outbox process
+name: Ledger Posting Logic
 
 on:
   push:
