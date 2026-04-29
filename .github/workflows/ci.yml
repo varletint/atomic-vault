@@ -1,10 +1,10 @@
-name: CI Pipeline
+name: CI Payment Resilience
 
 on:
   push:
-    branches: ["main", "feat/secure-withdrawals"]
+    branches: ["main", "feat/payment-resilience"]
   pull_request:
-    branches: ["main", "feat/secure-withdrawals"]
+    branches: ["main", "feat/payment-resilience"]
 
 jobs:
   build:
