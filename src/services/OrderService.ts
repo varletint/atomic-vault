@@ -14,7 +14,9 @@ import {
   TrackingEvent,
   type ITrackingEvent,
 } from "../models/index.js";
-import { NotFoundError, ValidationError, FsmError } from "../utils/AppError.js";
+import { NotFoundError, ValidationError, FsmError, AppError } from "../utils/AppError.js";
+import { CircuitBreaker } from "../utils/CircuitBreaker.js";
+import { retryWithBackoff } from "../utils/retryWithBackoff.js";
 import { InventoryService } from "./InventoryService.js";
 import { resolveGateway, type ChargeParams } from "../payments/index.js";
 import { OutboxProcessor } from "./OutboxProcessor.js";
@@ -29,6 +31,41 @@ import {
 } from "../config/guestCheckout.js";
 
 const GUEST_PAYMENT_SET = new Set<string>(GUEST_INSTANT_PAYMENT_METHODS);
+
+/* ── Payment resilience ── */
+
+function isTransientPaymentFailure(err: unknown): boolean {
+  if (
+    err instanceof AppError &&
+    err.statusCode >= 400 &&
+    err.statusCode < 500
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function isRetryablePaymentError(err: unknown): boolean {
+  const msg = String(err).toLowerCase();
+  return (
+    msg.includes("timeout") ||
+    msg.includes("econnreset") ||
+    msg.includes("etimedout") ||
+    msg.includes("econnrefused") ||
+    msg.includes("socket hang up") ||
+    msg.includes("network") ||
+    msg.includes("paystack http 5")
+  );
+}
+
+const paymentCircuitBreaker = new CircuitBreaker({
+  name: "PaystackPayment",
+  failureThreshold: 5,
+  resetTimeoutMs: 30_000,
+  windowMs: 60_000,
+  timeoutMs: 15_000,
+  isFailure: isTransientPaymentFailure,
+});
 
 function payableAmountKobo(order: {
   totalAmount: number;
@@ -678,7 +715,16 @@ export class OrderService {
           paymentMethod,
         };
         if (callbackUrl) initParams.callbackUrl = callbackUrl;
-        const initResult = await gateway.initialize(initParams);
+        const initResult = await paymentCircuitBreaker.exec(() =>
+          retryWithBackoff(
+            () => gateway.initialize(initParams),
+            {
+              maxRetries: 2,
+              name: "paystack:initialize",
+              retryable: isRetryablePaymentError,
+            }
+          )
+        );
         return {
           order: order.toObject() as IOrder,
           transaction: existingTx,
@@ -722,7 +768,16 @@ export class OrderService {
       };
       if (callbackUrl) chargeParams.callbackUrl = callbackUrl;
 
-      const initResult = await gateway.initialize(chargeParams);
+      const initResult = await paymentCircuitBreaker.exec(() =>
+        retryWithBackoff(
+          () => gateway.initialize(chargeParams),
+          {
+            maxRetries: 2,
+            name: "paystack:initialize",
+            retryable: isRetryablePaymentError,
+          }
+        )
+      );
 
       transaction.status = "PROCESSING";
       transaction.providerRef = initResult.providerRef;
@@ -767,7 +822,16 @@ export class OrderService {
     }
 
     const gateway = resolveGateway(claimed.provider);
-    const result = await gateway.verify(reference);
+    const result = await paymentCircuitBreaker.exec(() =>
+      retryWithBackoff(
+        () => gateway.verify(reference),
+        {
+          maxRetries: 2,
+          name: "paystack:verify",
+          retryable: isRetryablePaymentError,
+        }
+      )
+    );
 
     const session = await mongoose.startSession();
     session.startTransaction();
