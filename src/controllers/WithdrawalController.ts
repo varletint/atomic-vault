@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { Transaction, type ITransaction } from "../models/index.js";
 import { WithdrawalService } from "../services/WithdrawalService.js";
+import { PaystackTransferClient } from "../payments/paystack-transfer.js";
 import { ValidationError, NotFoundError } from "../utils/AppError.js";
 import type { z } from "zod";
 import type {
@@ -12,6 +13,26 @@ import type {
 } from "../schemas/withdrawalSchemas.js";
 
 export class WithdrawalController {
+  static resolveAccount = asyncHandler(async (req: Request, res: Response) => {
+    const bankCode = String(req.query.bank_code ?? "").trim();
+    const accountNumber = String(req.query.account_number ?? "").trim();
+
+    if (!bankCode) throw ValidationError("bank_code is required.");
+    if (!/^\d{10}$/.test(accountNumber)) {
+      throw ValidationError("account_number must be exactly 10 digits.");
+    }
+
+    const result = await PaystackTransferClient.resolveAccount({
+      accountNumber,
+      bankCode,
+    });
+
+    res.status(200).json({
+      success: true,
+      data: result,
+    });
+  });
+
   static initiate = asyncHandler(async (req: Request, res: Response) => {
     const body = req.body as z.infer<typeof initiateWithdrawalBodySchema>;
 

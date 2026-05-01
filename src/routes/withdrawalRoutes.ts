@@ -11,6 +11,13 @@ import {
 
 const router = Router();
 
+router.get(
+  "/resolve-account",
+  authMiddleware,
+  requireRole("ADMIN"),
+  WithdrawalController.resolveAccount
+);
+
 router.post(
   "/",
   authMiddleware,

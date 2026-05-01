@@ -1,7 +1,11 @@
 import mongoose, { Schema, type Document, type Types } from "mongoose";
 
 export type NotificationChannel = "EMAIL";
-export type NotificationType = "ORDER_CONFIRMED" | "ORDER_DELIVERED";
+export type NotificationType =
+  | "ORDER_CONFIRMED"
+  | "ORDER_DELIVERED"
+  | "ORDER_SHIPPED"
+  | "ORDER_CANCELLED";
 export type NotificationStatus = "SENT" | "FAILED";
 
 export interface INotificationLog extends Document {
@@ -29,7 +33,12 @@ const notificationLogSchema = new Schema<INotificationLog>(
     },
     type: {
       type: String,
-      enum: ["ORDER_CONFIRMED", "ORDER_DELIVERED"],
+      enum: [
+        "ORDER_CONFIRMED",
+        "ORDER_DELIVERED",
+        "ORDER_SHIPPED",
+        "ORDER_CANCELLED",
+      ],
       required: true,
       index: true,
     },

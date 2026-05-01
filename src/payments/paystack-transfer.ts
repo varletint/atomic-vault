@@ -74,6 +74,12 @@ export type VerifyTransferResult = {
   reference: string;
 };
 
+export type ResolveAccountResult = {
+  accountNumber: string;
+  accountName: string;
+  bankId: number;
+};
+
 /* ── Client ── */
 
 async function requestJson<T>(
@@ -219,6 +225,42 @@ export class PaystackTransferClient {
       transferCode: json.data.transfer_code,
       amount: json.data.amount,
       reference: json.data.reference,
+    };
+  }
+
+  /**
+   * Resolve a bank account number to the account holder's name.
+   * GET /bank/resolve?account_number=xxx&bank_code=xxx
+   */
+  static async resolveAccount(params: {
+    accountNumber: string;
+    bankCode: string;
+  }): Promise<ResolveAccountResult> {
+    const qs = new URLSearchParams({
+      account_number: params.accountNumber,
+      bank_code: params.bankCode,
+    });
+
+    const json = await requestJson<{
+      status: boolean;
+      message: string;
+      data: {
+        account_number: string;
+        account_name: string;
+        bank_id: number;
+      };
+    }>(`/bank/resolve?${qs.toString()}`, { method: "GET" });
+
+    if (!json.status) {
+      throw new Error(
+        `Paystack resolve account failed: ${json.message ?? "Unknown error"}`
+      );
+    }
+
+    return {
+      accountNumber: json.data.account_number,
+      accountName: json.data.account_name,
+      bankId: json.data.bank_id,
     };
   }
 }
