@@ -9,6 +9,7 @@ import {
 import { LedgerService } from "./LedgerService.js";
 import { TransactionEventService } from "./TransactionEventService.js";
 import { OutboxService } from "./OutboxService.js";
+import { OutboxProcessor } from "./OutboxProcessor.js";
 import {
   PaystackTransferClient,
   type InitiateTransferResult,
@@ -18,7 +19,7 @@ import { retryWithBackoff } from "../utils/retryWithBackoff.js";
 import { ValidationError, AppError } from "../utils/AppError.js";
 import { logger } from "../utils/logger.js";
 
-const WITHDRAWAL_RATE_LIMIT = 1; // max per wallet per hour
+const WITHDRAWAL_RATE_LIMIT = 10; // max per wallet per hour
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
 function isTransientFailure(err: unknown): boolean {
@@ -233,6 +234,11 @@ export class WithdrawalService {
 
       await session.commitTransaction();
 
+      logger.info(
+        `[Withdrawal] Enqueued WITHDRAWAL_RESERVED for tx ${tx._id}, triggering drain`
+      );
+      OutboxProcessor.scheduleDrain();
+
       return {
         transactionId: tx._id.toString(),
         status: tx.status,
@@ -287,6 +293,10 @@ export class WithdrawalService {
           )
         );
         recipientCode = recipient.recipientCode;
+        logger.info(
+          `[Withdrawal] Testing: Paystack recipient created -> ${recipientCode}`,
+          { actor: "PAYSTACK" }
+        );
 
         await Transaction.updateOne(
           { _id: tx._id },
@@ -313,6 +323,8 @@ export class WithdrawalService {
             }
           )
       );
+
+      logger.info(`[Withdrawal] Testing: Paystack transfer result`, { result });
 
       const session = await mongoose.startSession();
       session.startTransaction();
