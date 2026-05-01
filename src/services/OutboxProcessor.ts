@@ -109,10 +109,6 @@ export class OutboxProcessor {
     );
   }
 
-  /**
-   * Subscribe to drain signals for event-driven processing.
-   * Used by the drain worker to trigger immediate drains.
-   */
   static onDrain(callback: () => void): void {
     this.emitter.on("drain", callback);
   }
