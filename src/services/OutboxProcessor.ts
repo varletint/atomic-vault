@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
 import {
   OutboxEvent,
   type IOutboxEvent,
@@ -79,6 +80,14 @@ const handlerRegistry: {
     });
   },
 
+  TRANSACTION_POSTED: async (payload) => {
+    logger.info("Transaction posted event processed", { payload });
+  },
+
+  WALLET_UPDATED: async (payload) => {
+    logger.info("Wallet updated event processed", { payload });
+  },
+
   WITHDRAWAL_RESERVED: async (payload) => {
     if (!payload.transactionId) {
       throw new Error(
@@ -91,10 +100,21 @@ const handlerRegistry: {
 };
 
 export class OutboxProcessor {
+  private static emitter = new EventEmitter();
+
   static scheduleDrain(): void {
+    this.emitter.emit("drain");
     void this.drainOnce().catch((err) =>
-      logger.error("Instant outbox drain failed", { error: String(err) })
+      logger.error("[Outbox] Inline drain failed", { error: String(err) })
     );
+  }
+
+  /**
+   * Subscribe to drain signals for event-driven processing.
+   * Used by the drain worker to trigger immediate drains.
+   */
+  static onDrain(callback: () => void): void {
+    this.emitter.on("drain", callback);
   }
 
   static async drainOnce(opts: ProcessOptions = {}): Promise<{
@@ -146,11 +166,17 @@ export class OutboxProcessor {
 
     return await OutboxEvent.findOneAndUpdate(
       {
-        status: "PENDING",
-        nextRunAt: { $lte: now },
         $or: [
-          { lockedAt: { $exists: false } },
-          { lockedAt: { $lte: lockExpiry } },
+          // Normal: pending events ready to run
+          {
+            status: "PENDING",
+            nextRunAt: { $lte: now },
+          },
+          // Stuck: processing events with expired locks (worker crash recovery)
+          {
+            status: "PROCESSING",
+            lockedAt: { $lte: lockExpiry },
+          },
         ],
       },
       {
@@ -160,7 +186,7 @@ export class OutboxProcessor {
           lockId,
         },
       },
-      { sort: { nextRunAt: 1, createdAt: 1 }, new: true }
+      { sort: { nextRunAt: 1, createdAt: 1 }, returnDocument: "after" }
     ).lean<IOutboxEvent | null>();
   }
 
