@@ -1,10 +1,10 @@
-name: CI Pipeline
+name: CI
 
 on:
   push:
-    branches: ["main", "feat/secure-withdrawals"]
+    branches: ["main", "feat/**"]
   pull_request:
-    branches: ["main", "feat/secure-withdrawals"]
+    branches: ["main"]
 
 jobs:
   build:
@@ -28,27 +28,3 @@ jobs:
 
       - name: Build
         run: npm run build
-
-  auto-merge:
-    needs: build
-    if: github.ref != 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Create PR & Merge
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
-
-          # 1. Automatically create a Pull Request (ignores error if one already exists)
-          gh pr create --title "Auto Merge: $BRANCH_NAME" --body "Automated PR" --base main --head "$BRANCH_NAME" || true
-
-          # 2. Automatically merge the Pull Request
-          # Tries auto-merge first. If auto-merge isn't enabled, falls back to direct merge.
-          gh pr merge "$BRANCH_NAME" --squash --auto || gh pr merge "$BRANCH_NAME" --squash
