@@ -10,7 +10,8 @@ export type OutboxEventType =
   | "INVENTORY_LOW_STOCK"
   | "TRANSACTION_POSTED"
   | "WALLET_UPDATED"
-  | "WITHDRAWAL_RESERVED";
+  | "WITHDRAWAL_RESERVED"
+  | "SETTLEMENT_RECONCILED";
 
 export type OutboxPayloadMap = {
   ORDER_CONFIRMED: { orderId: string; paymentReference?: string };
@@ -35,6 +36,16 @@ export type OutboxPayloadMap = {
     accountNumber: string;
     accountName: string;
     reason: string;
+  };
+  SETTLEMENT_RECONCILED: {
+    settlementId: string;
+    paystackId: string;
+    status: string;
+    totalAmount: number;
+    netAmount: number;
+    matched: number;
+    unmatched: number;
+    mismatched: number;
   };
 };
 
@@ -67,6 +78,7 @@ const outboxEventSchema = new Schema<IOutboxEvent>(
         "TRANSACTION_POSTED",
         "WALLET_UPDATED",
         "WITHDRAWAL_RESERVED",
+        "SETTLEMENT_RECONCILED",
       ],
       required: true,
       index: true,

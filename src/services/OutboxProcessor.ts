@@ -97,6 +97,25 @@ const handlerRegistry: {
     const { WithdrawalService } = await import("./WithdrawalService.js");
     await WithdrawalService.processWithdrawalTransfer(payload.transactionId);
   },
+
+  SETTLEMENT_RECONCILED: async (payload) => {
+    const statusEmoji =
+      payload.status === "RECONCILED"
+        ? "✅"
+        : payload.status === "PARTIAL"
+        ? "⚠️"
+        : "❌";
+    logger.info(
+      `${statusEmoji} [Settlement] Reconciliation complete: ${payload.paystackId}`,
+      {
+        status: payload.status,
+        matched: payload.matched,
+        unmatched: payload.unmatched,
+        mismatched: payload.mismatched,
+        netAmount: payload.netAmount,
+      }
+    );
+  },
 };
 
 export class OutboxProcessor {

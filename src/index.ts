@@ -25,6 +25,7 @@ import {
   walletRoutes,
   dashboardRoutes,
   withdrawalRoutes,
+  settlementRoutes,
 } from "./routes/index.js";
 
 const app = express();
@@ -100,6 +101,7 @@ app.get("/", (_req: Request, res: Response) => {
       orders: "/api/orders",
       wallets: "/api/wallets",
       withdrawals: "/api/withdrawals",
+      settlements: "/api/settlements",
       storage: "/api/storage",
     },
   });
@@ -122,6 +124,7 @@ app.use("/api/cart", cartRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/wallets", walletRoutes);
 app.use("/api/withdrawals", withdrawalRoutes);
+app.use("/api/settlements", settlementRoutes);
 app.use("/api/storage", storageRoutes);
 app.use("/api/admin/dashboard", dashboardRoutes);
 
@@ -148,6 +151,84 @@ if (process.env.NODE_ENV !== "production") {
           );
         }, intervalMs);
       }
+
+      /* ── Outbox drain (embedded) ── */
+      const { OutboxProcessor } = require("./services/OutboxProcessor.js") as {
+        OutboxProcessor: typeof import("./services/OutboxProcessor.js").OutboxProcessor;
+      };
+      const { OutboxEvent } = require("./models/index.js") as {
+        OutboxEvent: typeof import("./models/index.js").OutboxEvent;
+      };
+
+      const OUTBOX_POLL_MS =
+        Number(process.env.OUTBOX_POLL_INTERVAL_MS) || 15 * 60_000; // 15 min
+      const OUTBOX_BATCH = Number(process.env.OUTBOX_BATCH_SIZE) || 25;
+      const PURGE_TTL_MS = 24 * 60 * 60_000; // 24h
+
+      const drainTick = async () => {
+        try {
+          const result = await OutboxProcessor.drainOnce({
+            batchSize: OUTBOX_BATCH,
+          });
+          if (result.processed > 0) {
+            logger.info("[OutboxDrain] Drain cycle complete", result);
+          }
+          // Purge old completed events
+          const cutoff = new Date(Date.now() - PURGE_TTL_MS);
+          const { deletedCount } = await OutboxEvent.deleteMany({
+            status: { $in: ["DONE", "FAILED"] },
+            updatedAt: { $lte: cutoff },
+          });
+          if (deletedCount > 0) {
+            logger.info(`[OutboxDrain] Purged ${deletedCount} old events`);
+          }
+        } catch (err) {
+          logger.error("[OutboxDrain] Drain cycle error", {
+            error: String(err),
+          });
+        }
+      };
+
+      // Event-driven: drain immediately when scheduleDrain() is called
+      OutboxProcessor.onDrain(() => {
+        void drainTick();
+      });
+
+      // Safety-net: poll every 30 min
+      setInterval(() => void drainTick(), OUTBOX_POLL_MS);
+      logger.info(
+        `[OutboxDrain] Embedded — event-driven + ${
+          OUTBOX_POLL_MS / 60_000
+        }min polling`
+      );
+
+      /* ── Settlement sync (embedded) ── */
+      const SETTLEMENT_POLL_MS =
+        Number(process.env.SETTLEMENT_POLL_INTERVAL_MS) || 6 * 60 * 60_000; // 6h
+      const SETTLEMENT_LOOKBACK =
+        Number(process.env.SETTLEMENT_LOOKBACK_HOURS) || 48;
+
+      const settlementTick = async () => {
+        try {
+          const { SettlementService } = await import(
+            "./services/SettlementService.js"
+          );
+          const result = await SettlementService.syncFromPaystack(
+            SETTLEMENT_LOOKBACK
+          );
+          logger.info("[SettlementSync] Sync cycle complete", result);
+        } catch (err) {
+          logger.error("[SettlementSync] Sync cycle error", {
+            error: String(err),
+          });
+        }
+      };
+
+      // Poll every 6 hours
+      setInterval(() => void settlementTick(), SETTLEMENT_POLL_MS);
+      logger.info(
+        `[SettlementSync] Embedded — ${SETTLEMENT_POLL_MS / 3_600_000}h polling`
+      );
 
       app.listen(PORT, () => {
         logger.info(`Server running on port ${PORT}`, {

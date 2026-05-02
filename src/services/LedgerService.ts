@@ -112,7 +112,6 @@ export class LedgerService {
         throw ValidationError("Wallet currency mismatch.");
       }
 
-      // Only impact Wallet document caching for these explicit accounts
       let balanceAfter: number | undefined;
       if (
         line.account === "WALLET_AVAILABLE" ||
@@ -158,8 +157,6 @@ export class LedgerService {
 
     return affectedWalletIds;
   }
-
-  /* ── High-level posting methods ── */
 
   /**
    * Posts an order payment journal to the STORE wallet:
@@ -727,6 +724,101 @@ export class LedgerService {
     await this.postJournalLines({
       session,
       transactionId: txOid,
+      lines,
+      actor,
+      source,
+      traceId,
+    });
+  }
+
+  /* ── Settlement posting ── */
+
+  /**
+   * Debit wallet when Paystack auto-settles funds to bank.
+   * DR WALLET_AVAILABLE / CR EXTERNAL_SETTLEMENT.
+   * Creates a PAYOUT transaction for the settlement batch.
+   * Idempotent via settlementId in the dedupeKey.
+   */
+  static async postSettlementDebit(params: {
+    session: mongoose.ClientSession;
+    settlementId: string;
+    netAmount: number;
+    currency: string;
+    actor: ILedgerActorRef;
+    source: string;
+    traceId: string;
+  }): Promise<void> {
+    const {
+      session,
+      settlementId,
+      netAmount,
+      currency,
+      actor,
+      source,
+      traceId,
+    } = params;
+
+    if (!Number.isInteger(netAmount) || netAmount < 1) {
+      throw ValidationError(
+        "Settlement netAmount must be a positive integer (kobo)."
+      );
+    }
+
+    const storeWallet = await WalletService.getStoreWallet(currency, session);
+
+    const idempotencyKey = `settlement:${settlementId}`;
+    const existingTx = await Transaction.findOne({ idempotencyKey }).session(
+      session
+    );
+    if (existingTx) return;
+
+    const [settlementTx] = await Transaction.create(
+      [
+        {
+          type: "PAYOUT" as const,
+          order: storeWallet._id,
+          amount: netAmount,
+          currency,
+          status: "CONFIRMED" as const,
+          paymentMethod: "BANK_TRANSFER" as const,
+          provider: "paystack",
+          idempotencyKey,
+          postedAt: new Date(),
+          paidAt: new Date(),
+          metadata: { settlementId, type: "auto_settlement" },
+        },
+      ],
+      { session }
+    );
+    if (!settlementTx)
+      throw ValidationError("Failed to create settlement transaction.");
+
+    const lines: JournalLine[] = [
+      {
+        walletId: storeWallet._id,
+        currency,
+        account: "WALLET_AVAILABLE",
+        direction: "DEBIT",
+        amount: netAmount,
+        entryType: "TRANSFER",
+        narration: `Paystack auto-settlement #${settlementId}`,
+        dedupeKey: `settlement:${settlementId}:debit`,
+      },
+      {
+        walletId: storeWallet._id,
+        currency,
+        account: "EXTERNAL_SETTLEMENT",
+        direction: "CREDIT",
+        amount: netAmount,
+        entryType: "TRANSFER",
+        narration: `Paystack auto-settlement #${settlementId} — funds sent to bank`,
+        dedupeKey: `settlement:${settlementId}:credit`,
+      },
+    ];
+
+    await this.postJournalLines({
+      session,
+      transactionId: settlementTx._id,
       lines,
       actor,
       source,
