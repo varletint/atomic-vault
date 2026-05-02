@@ -287,6 +287,44 @@ export class OrderController {
       }
     }
 
+    /* ── Settlement webhook events ── */
+    if (parsed.event === "settlement.success" && parsed.raw.data) {
+      const { SettlementService } = await import(
+        "../services/SettlementService.js"
+      );
+      const { PaystackSettlementClient } = await import(
+        "../payments/paystack-settlement.js"
+      );
+
+      const settlementData = parsed.raw.data as {
+        id: number;
+        status: string;
+        currency: string;
+        total_amount: number;
+        total_fees: number;
+        effective_amount: number;
+        settlement_date: string;
+      };
+
+      const transactions =
+        await PaystackSettlementClient.fetchSettlementTransactions(
+          settlementData.id
+        );
+
+      await SettlementService.processSettlement(
+        {
+          id: settlementData.id,
+          status: settlementData.status,
+          currency: settlementData.currency,
+          totalAmount: settlementData.total_amount,
+          totalFees: settlementData.total_fees,
+          netAmount: settlementData.effective_amount,
+          settledAt: settlementData.settlement_date,
+        },
+        transactions
+      );
+    }
+
     res.status(200).json({ success: true });
   });
 
