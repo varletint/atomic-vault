@@ -161,7 +161,7 @@ if (process.env.NODE_ENV !== "production") {
       };
 
       const OUTBOX_POLL_MS =
-        Number(process.env.OUTBOX_POLL_INTERVAL_MS) || 15 * 60_000; // 15 min
+        Number(process.env.OUTBOX_POLL_INTERVAL_MS) || 10 * 60_000; // 10 min
       const OUTBOX_BATCH = Number(process.env.OUTBOX_BATCH_SIZE) || 25;
       const PURGE_TTL_MS = 24 * 60 * 60_000; // 24h
 
@@ -194,7 +194,7 @@ if (process.env.NODE_ENV !== "production") {
         void drainTick();
       });
 
-      // Safety-net: poll every 30 min
+      // Safety-net: poll every 10 min
       setInterval(() => void drainTick(), OUTBOX_POLL_MS);
       logger.info(
         `[OutboxDrain] Embedded — event-driven + ${
