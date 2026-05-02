@@ -1,4 +1,4 @@
-name: CI
+name: CI FOR PAYSTACK SETTLEMENT SYNC
 
 on:
   push:
