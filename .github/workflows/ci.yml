@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: ["main", "feat/outbox-withdrawal-hardening"]
+    branches: ["main", "feat/paystack-settlement-sync"]
   pull_request:
-    branches: ["main", "feat/outbox-withdrawal-hardening"]
+    branches: ["main", "feat/paystack-settlement-sync"]
 
 jobs:
   build:
