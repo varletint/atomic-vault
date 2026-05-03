@@ -141,7 +141,7 @@ app.use(errorHandler);
 
 if (process.env.NODE_ENV !== "production") {
   connectToDatabase()
-    .then(() => {
+    .then(async () => {
       if (process.env.DISABLE_RESERVATION_REAPER !== "true") {
         const raw = Number(process.env.RESERVATION_REAPER_INTERVAL_MS);
         const intervalMs = Number.isFinite(raw) && raw > 0 ? raw : 60_000;
@@ -153,12 +153,8 @@ if (process.env.NODE_ENV !== "production") {
       }
 
       /* ── Outbox drain (embedded) ── */
-      const { OutboxProcessor } = require("./services/OutboxProcessor.js") as {
-        OutboxProcessor: typeof import("./services/OutboxProcessor.js").OutboxProcessor;
-      };
-      const { OutboxEvent } = require("./models/index.js") as {
-        OutboxEvent: typeof import("./models/index.js").OutboxEvent;
-      };
+      const { OutboxProcessor } = await import("./services/OutboxProcessor.js");
+      const { OutboxEvent } = await import("./models/index.js");
 
       const OUTBOX_POLL_MS =
         Number(process.env.OUTBOX_POLL_INTERVAL_MS) || 10 * 60_000; // 10 min
