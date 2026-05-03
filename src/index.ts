@@ -176,7 +176,6 @@ if (process.env.NODE_ENV !== "production") {
       // Event-driven: drain immediately when scheduleDrain() is called
       OutboxProcessor.onDrain(drainTick);
 
-      // Safety-net polling
       setInterval(drainTick, OUTBOX_POLL_MS);
 
       // Purge old completed/failed events every hour
