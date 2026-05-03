@@ -154,48 +154,47 @@ if (process.env.NODE_ENV !== "production") {
 
       /* ── Outbox drain (embedded) ── */
       const { OutboxProcessor } = await import("./services/OutboxProcessor.js");
-      const { OutboxEvent } = await import("./models/index.js");
 
       const OUTBOX_POLL_MS =
-        Number(process.env.OUTBOX_POLL_INTERVAL_MS) || 10 * 60_000; // 10 min
+        Number(process.env.OUTBOX_POLL_INTERVAL_MS) || 10_000; // 10 sec
       const OUTBOX_BATCH = Number(process.env.OUTBOX_BATCH_SIZE) || 25;
-      const PURGE_TTL_MS = 24 * 60 * 60_000; // 24h
+      const PURGE_INTERVAL_MS = 60 * 60_000; // run purge every 1h
+      const PURGE_TTL_MS =
+        Number(process.env.OUTBOX_PURGE_TTL_MS) || 24 * 60 * 60_000; // 24h
 
-      const drainTick = async () => {
-        try {
-          const result = await OutboxProcessor.drainOnce({
-            batchSize: OUTBOX_BATCH,
-          });
-          if (result.processed > 0) {
-            logger.info("[OutboxDrain] Drain cycle complete", result);
-          }
-          // Purge old completed events
-          const cutoff = new Date(Date.now() - PURGE_TTL_MS);
-          const { deletedCount } = await OutboxEvent.deleteMany({
-            status: { $in: ["DONE", "FAILED"] },
-            updatedAt: { $lte: cutoff },
-          });
-          if (deletedCount > 0) {
-            logger.info(`[OutboxDrain] Purged ${deletedCount} old events`);
-          }
-        } catch (err) {
+      const drainTick = () => {
+        void OutboxProcessor.drainOnce({
+          batchSize: OUTBOX_BATCH,
+          quiet: true,
+        }).catch((err) =>
           logger.error("[OutboxDrain] Drain cycle error", {
             error: String(err),
-          });
-        }
+          })
+        );
       };
 
       // Event-driven: drain immediately when scheduleDrain() is called
-      OutboxProcessor.onDrain(() => {
-        void drainTick();
-      });
+      OutboxProcessor.onDrain(drainTick);
 
-      // Safety-net: poll every 10 min
-      setInterval(() => void drainTick(), OUTBOX_POLL_MS);
+      // Safety-net polling
+      setInterval(drainTick, OUTBOX_POLL_MS);
+
+      // Purge old completed/failed events every hour
+      setInterval(() => {
+        void OutboxProcessor.purgeCompleted({
+          ttlMs: PURGE_TTL_MS,
+          quiet: false,
+        }).catch((err) =>
+          logger.error("[OutboxPurge] Purge cycle error", {
+            error: String(err),
+          })
+        );
+      }, PURGE_INTERVAL_MS);
+
       logger.info(
-        `[OutboxDrain] Embedded — event-driven + ${
-          OUTBOX_POLL_MS / 60_000
-        }min polling`
+        `[Outbox] Embedded — event-driven + ${
+          OUTBOX_POLL_MS / 1000
+        }s polling, purge every ${PURGE_INTERVAL_MS / 60_000}h`
       );
 
       /* ── Settlement sync (embedded) ── */

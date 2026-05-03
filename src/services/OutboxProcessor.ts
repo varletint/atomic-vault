@@ -123,16 +123,15 @@ export class OutboxProcessor {
 
   static scheduleDrain(): void {
     this.emitter.emit("drain");
-    void this.drainOnce().catch((err) =>
-      logger.error("[Outbox] Inline drain failed", { error: String(err) })
-    );
   }
 
   static onDrain(callback: () => void): void {
     this.emitter.on("drain", callback);
   }
 
-  static async drainOnce(opts: ProcessOptions = {}): Promise<{
+  static async drainOnce(
+    opts: ProcessOptions & { quiet?: boolean } = {}
+  ): Promise<{
     processed: number;
     succeeded: number;
     failed: number;
@@ -140,6 +139,7 @@ export class OutboxProcessor {
     const batchSize = opts.batchSize ?? DEFAULT_BATCH_SIZE;
     const lockTtlMs = opts.lockTtlMs ?? DEFAULT_LOCK_TTL_MS;
     const concurrency = opts.concurrency ?? DEFAULT_CONCURRENCY;
+    const quiet = opts.quiet ?? false;
 
     let processed = 0;
     let succeeded = 0;
@@ -169,7 +169,37 @@ export class OutboxProcessor {
       }
     }
 
+    if (!quiet && processed > 0) {
+      logger.info("[Outbox] Drain cycle complete", {
+        processed,
+        succeeded,
+        failed,
+      });
+    }
+
     return { processed, succeeded, failed };
+  }
+
+  static async purgeCompleted(
+    opts: { ttlMs?: number; quiet?: boolean } = {}
+  ): Promise<{
+    purged: number;
+  }> {
+    const ttlMs = opts.ttlMs ?? 24 * 60 * 60_000; // 24h default
+    const cutoff = new Date(Date.now() - ttlMs);
+
+    const { deletedCount = 0 } = await OutboxEvent.deleteMany({
+      $or: [
+        { status: "DONE", completedAt: { $lte: cutoff } },
+        { status: "FAILED", updatedAt: { $lte: cutoff } },
+      ],
+    });
+
+    if (!opts.quiet && deletedCount > 0) {
+      logger.info(`[Outbox] Purged ${deletedCount} old events`);
+    }
+
+    return { purged: deletedCount };
   }
 
   private static async claimNext(
@@ -182,12 +212,11 @@ export class OutboxProcessor {
     return await OutboxEvent.findOneAndUpdate(
       {
         $or: [
-          // Normal: pending events ready to run
           {
             status: "PENDING",
             nextRunAt: { $lte: now },
           },
-          // Stuck: processing events with expired locks (worker crash recovery)
+
           {
             status: "PROCESSING",
             lockedAt: { $lte: lockExpiry },
