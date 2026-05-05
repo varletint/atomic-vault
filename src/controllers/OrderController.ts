@@ -325,6 +325,12 @@ export class OrderController {
       );
     }
 
+    if (parsed.event === "refund.processed" && parsed.raw.data) {
+      const refundData = parsed.raw.data as { id: number };
+      const { RefundService } = await import("../services/RefundService.js");
+      await RefundService.handleRefundSettled(`refund:${refundData.id}`);
+    }
+
     res.status(200).json({ success: true });
   });
 
