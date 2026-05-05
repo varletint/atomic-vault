@@ -54,6 +54,20 @@ type PaystackVerifyResponse = {
   };
 };
 
+type PaystackRefundResponse = {
+  status: boolean;
+  message: string;
+  data: {
+    id: number;
+    transaction: { reference: string };
+    amount: number;
+    currency: string;
+    status: string;
+    refunded_at: string | null;
+    merchant_note?: string;
+  };
+};
+
 export class PaystackClient {
   private static async requestJson<T>(
     path: string,
@@ -147,6 +161,29 @@ export class PaystackClient {
     if (!json.status) {
       throw new Error(
         `Paystack verify failed: ${json.message ?? "Unknown error"}`
+      );
+    }
+
+    return json.data;
+  }
+
+  static async createRefund(
+    transactionRef: string,
+    amountKobo?: number
+  ): Promise<PaystackRefundResponse["data"]> {
+    const body: Record<string, unknown> = {
+      transaction: transactionRef,
+    };
+    if (amountKobo !== undefined) body.amount = amountKobo;
+
+    const json = await this.requestJson<PaystackRefundResponse>("/refund", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+
+    if (!json.status) {
+      throw new Error(
+        `Paystack refund failed: ${json.message ?? "Unknown error"}`
       );
     }
 

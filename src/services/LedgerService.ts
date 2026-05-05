@@ -23,6 +23,7 @@ export type JournalLine = {
   entryType: LedgerEntryType;
   narration?: string;
   dedupeKey?: string;
+  originalPostingId?: mongoose.Types.ObjectId;
 };
 
 type PostJournalParams = {
@@ -149,6 +150,7 @@ export class LedgerService {
         source,
         traceId,
         dedupeKey: line.dedupeKey,
+        originalPostingId: line.originalPostingId,
       };
 
       await LedgerEntry.create([entry], { session });
@@ -820,6 +822,114 @@ export class LedgerService {
       session,
       transactionId: settlementTx._id,
       lines,
+      actor,
+      source,
+      traceId,
+    });
+  }
+
+  /**
+   * Posts a refund journal with optional deduction fee.
+   * Refund entries: DR WALLET_AVAILABLE / CR EXTERNAL_SETTLEMENT (net amount)
+   * Deduction entries (if > 0): DR WALLET_AVAILABLE / CR REVENUE (stays as store revenue)
+   * All entries carry `originalPostingId` linking back to the original payment posting.
+   */
+  static async postRefundJournal(params: {
+    session: mongoose.ClientSession;
+    transactionId: string;
+    currency: string;
+    refundAmount: number;
+    deductionAmount?: number;
+    deductionReason?: string;
+    originalPostingId: mongoose.Types.ObjectId;
+    actor: ILedgerActorRef;
+    source: string;
+    traceId: string;
+  }): Promise<void> {
+    const {
+      session,
+      transactionId,
+      currency,
+      refundAmount,
+      deductionAmount = 0,
+      deductionReason,
+      originalPostingId,
+      actor,
+      source,
+      traceId,
+    } = params;
+
+    if (!Number.isInteger(refundAmount) || refundAmount < 1) {
+      throw ValidationError("refundAmount must be a positive integer (kobo).");
+    }
+    if (!Number.isInteger(deductionAmount) || deductionAmount < 0) {
+      throw ValidationError(
+        "deductionAmount must be a non-negative integer (kobo)."
+      );
+    }
+
+    const storeWallet = await WalletService.getStoreWallet(currency, session);
+    const txObjectId = new mongoose.Types.ObjectId(transactionId);
+
+    /* Refund entries: reverse the payment */
+    const refundLines: JournalLine[] = [
+      {
+        walletId: storeWallet._id,
+        currency,
+        account: "WALLET_AVAILABLE",
+        direction: "DEBIT",
+        amount: refundAmount,
+        entryType: "REFUND",
+        narration: "Refund: Order payment (net)",
+        dedupeKey: `refund:${transactionId}:wallet`,
+        originalPostingId,
+      },
+      {
+        walletId: storeWallet._id,
+        currency,
+        account: "EXTERNAL_SETTLEMENT",
+        direction: "CREDIT",
+        amount: refundAmount,
+        entryType: "REFUND",
+        narration: "Refund: External settlement",
+        dedupeKey: `refund:${transactionId}:ext`,
+        originalPostingId,
+      },
+    ];
+
+    /* Deduction entries: explicit fee kept as store revenue */
+    if (deductionAmount > 0) {
+      const reason = deductionReason ?? "Cancellation deduction";
+      refundLines.push(
+        {
+          walletId: storeWallet._id,
+          currency,
+          account: "WALLET_AVAILABLE",
+          direction: "DEBIT",
+          amount: deductionAmount,
+          entryType: "FEE",
+          narration: `Cancellation deduction: ${reason}`,
+          dedupeKey: `refund:${transactionId}:deduction:debit`,
+          originalPostingId,
+        },
+        {
+          walletId: storeWallet._id,
+          currency,
+          account: "REVENUE",
+          direction: "CREDIT",
+          amount: deductionAmount,
+          entryType: "FEE",
+          narration: "Cancellation fee revenue",
+          dedupeKey: `refund:${transactionId}:deduction:credit`,
+          originalPostingId,
+        }
+      );
+    }
+
+    await this.postJournalLines({
+      session,
+      transactionId: txObjectId,
+      lines: refundLines,
       actor,
       source,
       traceId,

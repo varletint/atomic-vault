@@ -14,7 +14,12 @@ import {
   TrackingEvent,
   type ITrackingEvent,
 } from "../models/index.js";
-import { NotFoundError, ValidationError, FsmError, AppError } from "../utils/AppError.js";
+import {
+  NotFoundError,
+  ValidationError,
+  FsmError,
+  AppError,
+} from "../utils/AppError.js";
 import { CircuitBreaker } from "../utils/CircuitBreaker.js";
 import { retryWithBackoff } from "../utils/retryWithBackoff.js";
 import { InventoryService } from "./InventoryService.js";
@@ -23,6 +28,7 @@ import { OutboxProcessor } from "./OutboxProcessor.js";
 import { OutboxService } from "./OutboxService.js";
 import { LedgerService } from "./LedgerService.js";
 import { TransactionEventService } from "./TransactionEventService.js";
+import { RefundService } from "./RefundService.js";
 import { withRetryableTransaction } from "../utils/withRetryableTransaction.js";
 import {
   ORDER_GUEST_MAX_ITEMS_TOTAL_KOBO,
@@ -31,8 +37,6 @@ import {
 } from "../config/guestCheckout.js";
 
 const GUEST_PAYMENT_SET = new Set<string>(GUEST_INSTANT_PAYMENT_METHODS);
-
-/* ── Payment resilience ── */
 
 function isTransientPaymentFailure(err: unknown): boolean {
   if (
@@ -620,12 +624,45 @@ export class OrderService {
         session
       );
 
+      if (previousStatus !== "PENDING") {
+        await RefundService.createRefundRequest({
+          orderId,
+          userId: order.user?.toString() ?? null,
+          session,
+        });
+      }
+
       await order.save({ session });
       return order;
     });
 
     OutboxProcessor.scheduleDrain();
     return order.toObject() as IOrder;
+  }
+
+  /**
+   * Customer-initiated cancellation request.
+   * Restricted to PENDING and CONFIRMED orders only.
+   */
+  static async requestCancellation(
+    orderId: string,
+    userId: string,
+    reason: string
+  ): Promise<IOrder> {
+    const order = await Order.findById(orderId).lean<IOrder>();
+    if (!order) throw NotFoundError("Order");
+
+    if (!order.user || order.user.toString() !== userId) {
+      throw ValidationError("You can only cancel your own orders.");
+    }
+
+    if (order.status !== "PENDING" && order.status !== "CONFIRMED") {
+      throw ValidationError(
+        `Cannot cancel order in status ${order.status}. Only PENDING and CONFIRMED orders can be cancelled.`
+      );
+    }
+
+    return OrderService.cancelOrder(orderId, reason);
   }
 
   static async failOrder(orderId: string, reason: string): Promise<IOrder> {
@@ -716,14 +753,11 @@ export class OrderService {
         };
         if (callbackUrl) initParams.callbackUrl = callbackUrl;
         const initResult = await paymentCircuitBreaker.exec(() =>
-          retryWithBackoff(
-            () => gateway.initialize(initParams),
-            {
-              maxRetries: 2,
-              name: "paystack:initialize",
-              retryable: isRetryablePaymentError,
-            }
-          )
+          retryWithBackoff(() => gateway.initialize(initParams), {
+            maxRetries: 2,
+            name: "paystack:initialize",
+            retryable: isRetryablePaymentError,
+          })
         );
         return {
           order: order.toObject() as IOrder,
@@ -769,14 +803,11 @@ export class OrderService {
       if (callbackUrl) chargeParams.callbackUrl = callbackUrl;
 
       const initResult = await paymentCircuitBreaker.exec(() =>
-        retryWithBackoff(
-          () => gateway.initialize(chargeParams),
-          {
-            maxRetries: 2,
-            name: "paystack:initialize",
-            retryable: isRetryablePaymentError,
-          }
-        )
+        retryWithBackoff(() => gateway.initialize(chargeParams), {
+          maxRetries: 2,
+          name: "paystack:initialize",
+          retryable: isRetryablePaymentError,
+        })
       );
 
       transaction.status = "PROCESSING";
@@ -823,14 +854,11 @@ export class OrderService {
 
     const gateway = resolveGateway(claimed.provider);
     const result = await paymentCircuitBreaker.exec(() =>
-      retryWithBackoff(
-        () => gateway.verify(reference),
-        {
-          maxRetries: 2,
-          name: "paystack:verify",
-          retryable: isRetryablePaymentError,
-        }
-      )
+      retryWithBackoff(() => gateway.verify(reference), {
+        maxRetries: 2,
+        name: "paystack:verify",
+        retryable: isRetryablePaymentError,
+      })
     );
 
     const session = await mongoose.startSession();

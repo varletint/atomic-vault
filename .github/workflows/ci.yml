@@ -1,10 +1,10 @@
-name: CI FOR PAYSTACK SETTLEMENT SYNC
+name: CI FOR ENTERPRISE REFUND FLOW
 
 on:
   push:
-    branches: ["main", "feat/paystack-settlement-sync"]
+    branches: ["main", "feat/enterprise-refund-flow"]
   pull_request:
-    branches: ["main", "feat/paystack-settlement-sync"]
+    branches: ["main", "feat/enterprise-refund-flow"]
 
 jobs:
   build:

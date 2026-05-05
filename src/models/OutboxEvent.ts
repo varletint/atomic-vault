@@ -11,7 +11,16 @@ export type OutboxEventType =
   | "TRANSACTION_POSTED"
   | "WALLET_UPDATED"
   | "WITHDRAWAL_RESERVED"
-  | "SETTLEMENT_RECONCILED";
+  | "SETTLEMENT_RECONCILED"
+  | "REFUND_REQUESTED"
+  | "REFUND_VALIDATED"
+  | "REFUND_VALIDATION_FAILED"
+  | "REFUND_APPROVED"
+  | "REFUND_DISPATCHED"
+  | "REFUND_GATEWAY_TIMEOUT"
+  | "REFUND_RETRY_EXHAUSTED"
+  | "REFUND_SETTLED"
+  | "REFUND_COMPLETED";
 
 export type OutboxPayloadMap = {
   ORDER_CONFIRMED: { orderId: string; paymentReference?: string };
@@ -47,6 +56,23 @@ export type OutboxPayloadMap = {
     unmatched: number;
     mismatched: number;
   };
+  REFUND_REQUESTED: { refundRequestId: string };
+  REFUND_VALIDATED: { refundRequestId: string };
+  REFUND_VALIDATION_FAILED: { refundRequestId: string; reason: string };
+  REFUND_APPROVED: { refundRequestId: string };
+  REFUND_DISPATCHED: {
+    refundRequestId: string;
+    transactionRef: string;
+    refundAmount: number;
+    currency: string;
+  };
+  REFUND_GATEWAY_TIMEOUT: { refundRequestId: string; error: string };
+  REFUND_RETRY_EXHAUSTED: { refundRequestId: string; error: string };
+  REFUND_SETTLED: {
+    refundRequestId: string;
+    providerRefundRef: string;
+  };
+  REFUND_COMPLETED: { refundRequestId: string };
 };
 
 export interface IOutboxEvent extends Document {
@@ -79,6 +105,15 @@ const outboxEventSchema = new Schema<IOutboxEvent>(
         "WALLET_UPDATED",
         "WITHDRAWAL_RESERVED",
         "SETTLEMENT_RECONCILED",
+        "REFUND_REQUESTED",
+        "REFUND_VALIDATED",
+        "REFUND_VALIDATION_FAILED",
+        "REFUND_APPROVED",
+        "REFUND_DISPATCHED",
+        "REFUND_GATEWAY_TIMEOUT",
+        "REFUND_RETRY_EXHAUSTED",
+        "REFUND_SETTLED",
+        "REFUND_COMPLETED",
       ],
       required: true,
       index: true,

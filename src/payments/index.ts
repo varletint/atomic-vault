@@ -9,6 +9,8 @@ export type {
   ChargeParams,
   InitializeResult,
   VerifyResult,
+  RefundParams,
+  RefundResult,
   PaymentGateway,
 } from "./types.js";
 export { PaystackGateway } from "./paystack-adapter.js";

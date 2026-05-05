@@ -26,6 +26,7 @@ import {
   dashboardRoutes,
   withdrawalRoutes,
   settlementRoutes,
+  refundRoutes,
 } from "./routes/index.js";
 
 const app = express();
@@ -102,6 +103,7 @@ app.get("/", (_req: Request, res: Response) => {
       wallets: "/api/wallets",
       withdrawals: "/api/withdrawals",
       settlements: "/api/settlements",
+      refunds: "/api/refunds",
       storage: "/api/storage",
     },
   });
@@ -125,6 +127,7 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/wallets", walletRoutes);
 app.use("/api/withdrawals", withdrawalRoutes);
 app.use("/api/settlements", settlementRoutes);
+app.use("/api/refunds", refundRoutes);
 app.use("/api/storage", storageRoutes);
 app.use("/api/admin/dashboard", dashboardRoutes);
 

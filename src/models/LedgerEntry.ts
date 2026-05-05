@@ -39,6 +39,7 @@ export interface ILedgerEntryAttrs {
   source: string;
   traceId: string;
   dedupeKey?: string;
+  originalPostingId?: Types.ObjectId;
 }
 
 export interface ILedgerEntry extends Document, ILedgerEntryAttrs {
@@ -122,6 +123,13 @@ const ledgerEntrySchema = new Schema<ILedgerEntry>(
     },
     narration: { type: String, trim: true },
     balanceAfter: { type: Number, required: false, default: undefined },
+    originalPostingId: {
+      type: Schema.Types.ObjectId,
+      required: false,
+      default: undefined,
+      index: true,
+      sparse: true,
+    },
     actor: { type: actorSchema, required: true },
     source: { type: String, required: true, trim: true },
     traceId: { type: String, required: true, trim: true },

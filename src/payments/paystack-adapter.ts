@@ -4,7 +4,7 @@
 
 import type { PaymentMethod } from "../models/index.js";
 import { PaystackClient } from "./paystack-client.js";
-import type { ChargeParams, InitializeResult, PaymentGateway, VerifyResult } from "./types.js";
+import type { ChargeParams, InitializeResult, PaymentGateway, RefundParams, RefundResult, VerifyResult } from "./types.js";
 
 const PAYSTACK_CHANNEL_MAP: Partial<Record<PaymentMethod, string>> = {
   CARD: "card",
@@ -69,6 +69,19 @@ export class PaystackGateway implements PaymentGateway {
         gatewayResponse: data.gateway_response,
         ...(data.metadata ?? {}),
       },
+    };
+  }
+
+  async refund(params: RefundParams): Promise<RefundResult> {
+    const data = await PaystackClient.createRefund(
+      params.transactionRef,
+      params.amount
+    );
+
+    return {
+      success: true,
+      providerRefundRef: `refund:${data.id}`,
+      amount: data.amount,
     };
   }
 }
