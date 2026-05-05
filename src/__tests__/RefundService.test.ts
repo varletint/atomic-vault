@@ -2,10 +2,6 @@
  * RefundService unit tests — Node built-in test runner.
  *
  * Run:   npx tsx --test src/__tests__/RefundService.test.ts
- *
- * These tests validate the RefundService FSM logic, transition guards,
- * ledger linking, and outbox event creation. They require a running
- * MongoDB instance (set MONGODB_URI env var or default localhost).
  */
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
