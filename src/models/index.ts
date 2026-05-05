@@ -97,3 +97,11 @@ export {
   type SettlementStatus,
   type SettlementItemMatch,
 } from "./Settlement.js";
+export {
+  RefundRequest,
+  type IRefundRequest,
+  type RefundStatus,
+  type IRefundStatusHistoryEntry,
+  ALLOWED_REFUND_TRANSITIONS,
+  MAX_REQUEUE_COUNT,
+} from "./RefundRequest.js";
