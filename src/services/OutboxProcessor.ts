@@ -116,6 +116,79 @@ const handlerRegistry: {
       }
     );
   },
+
+  REFUND_REQUESTED: async (payload) => {
+    if (!payload.refundRequestId) {
+      throw new Error("REFUND_REQUESTED payload missing refundRequestId.");
+    }
+    const { RefundService } = await import("./RefundService.js");
+    await RefundService.validateRefund(payload.refundRequestId);
+  },
+
+  REFUND_VALIDATED: async (payload) => {
+    if (!payload.refundRequestId) {
+      throw new Error("REFUND_VALIDATED payload missing refundRequestId.");
+    }
+    const { RefundService } = await import("./RefundService.js");
+    await RefundService.evaluateApproval(payload.refundRequestId);
+  },
+
+  REFUND_VALIDATION_FAILED: async (payload) => {
+    logger.warn("[Refund] Validation failed", {
+      refundRequestId: payload.refundRequestId,
+      reason: payload.reason,
+    });
+  },
+
+  REFUND_APPROVED: async (payload) => {
+    if (!payload.refundRequestId) {
+      throw new Error("REFUND_APPROVED payload missing refundRequestId.");
+    }
+    const { RefundService } = await import("./RefundService.js");
+    await RefundService.dispatchToGateway(payload.refundRequestId);
+  },
+
+  REFUND_DISPATCHED: async (payload) => {
+    logger.info("[Refund] Dispatched to gateway — waiting for webhook", {
+      refundRequestId: payload.refundRequestId,
+      transactionRef: payload.transactionRef,
+    });
+  },
+
+  REFUND_GATEWAY_TIMEOUT: async (payload) => {
+    if (!payload.refundRequestId) {
+      throw new Error(
+        "REFUND_GATEWAY_TIMEOUT payload missing refundRequestId."
+      );
+    }
+    logger.warn("[Refund] Gateway timeout — retrying", {
+      refundRequestId: payload.refundRequestId,
+      error: payload.error,
+    });
+    const { RefundService } = await import("./RefundService.js");
+    await RefundService.retryFromRetrying(payload.refundRequestId);
+  },
+
+  REFUND_RETRY_EXHAUSTED: async (payload) => {
+    logger.error("[Refund] Retry exhausted — requires manual intervention", {
+      refundRequestId: payload.refundRequestId,
+      error: payload.error,
+    });
+  },
+
+  REFUND_SETTLED: async (payload) => {
+    if (!payload.refundRequestId) {
+      throw new Error("REFUND_SETTLED payload missing refundRequestId.");
+    }
+    const { RefundService } = await import("./RefundService.js");
+    await RefundService.completeRefund(payload.refundRequestId);
+  },
+
+  REFUND_COMPLETED: async (payload) => {
+    logger.info("[Refund] Completed", {
+      refundRequestId: payload.refundRequestId,
+    });
+  },
 };
 
 export class OutboxProcessor {
