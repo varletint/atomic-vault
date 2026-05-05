@@ -26,7 +26,21 @@ export type VerifyResult = {
   metadata?: Record<string, unknown>;
 };
 
+export type RefundParams = {
+  transactionRef: string;
+  amount?: number;
+  currency: string;
+};
+
+export type RefundResult = {
+  success: boolean;
+  providerRefundRef: string;
+  amount: number;
+  failureReason?: string;
+};
+
 export interface PaymentGateway {
   initialize(params: ChargeParams): Promise<InitializeResult>;
   verify(reference: string): Promise<VerifyResult>;
+  refund?(params: RefundParams): Promise<RefundResult>;
 }
