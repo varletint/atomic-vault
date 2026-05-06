@@ -262,73 +262,97 @@ export class OrderController {
       return;
     }
 
-    if (parsed.event === "charge.success" && parsed.reference) {
-      await OrderService.verifyPayment(parsed.reference);
-    }
+    /* ── Persist webhook event for audit trail ── */
+    const { WebhookEvent } = await import("../models/WebhookEvent.js");
+    const webhookEvent = await WebhookEvent.create({
+      provider: "PAYSTACK",
+      event: parsed.event,
+      payload: parsed.raw.data ?? parsed.raw,
+      signature,
+      status: "RECEIVED",
+      receivedAt: new Date(),
+    });
 
-    /* ── Transfer webhook events (withdrawals) ── */
-    if (parsed.reference) {
-      if (parsed.event === "transfer.success") {
-        const { WithdrawalService } = await import(
-          "../services/WithdrawalService.js"
+    try {
+      if (parsed.event === "charge.success" && parsed.reference) {
+        await OrderService.verifyPayment(parsed.reference);
+      }
+
+      /* ── Transfer webhook events (withdrawals) ── */
+      if (parsed.reference) {
+        if (parsed.event === "transfer.success") {
+          const { WithdrawalService } = await import(
+            "../services/WithdrawalService.js"
+          );
+          await WithdrawalService.confirmWithdrawal(parsed.reference);
+        } else if (
+          parsed.event === "transfer.failed" ||
+          parsed.event === "transfer.reversed"
+        ) {
+          const { WithdrawalService } = await import(
+            "../services/WithdrawalService.js"
+          );
+          await WithdrawalService.failWithdrawal(
+            parsed.reference,
+            `Webhook: ${parsed.event}`
+          );
+        }
+      }
+
+      /* ── Settlement webhook events ── */
+      if (parsed.event === "settlement.success" && parsed.raw.data) {
+        const { SettlementService } = await import(
+          "../services/SettlementService.js"
         );
-        await WithdrawalService.confirmWithdrawal(parsed.reference);
-      } else if (
-        parsed.event === "transfer.failed" ||
-        parsed.event === "transfer.reversed"
-      ) {
-        const { WithdrawalService } = await import(
-          "../services/WithdrawalService.js"
+        const { PaystackSettlementClient } = await import(
+          "../payments/paystack-settlement.js"
         );
-        await WithdrawalService.failWithdrawal(
-          parsed.reference,
-          `Webhook: ${parsed.event}`
+
+        const settlementData = parsed.raw.data as {
+          id: number;
+          status: string;
+          currency: string;
+          total_amount: number;
+          total_fees: number;
+          effective_amount: number;
+          settlement_date: string;
+        };
+
+        const transactions =
+          await PaystackSettlementClient.fetchSettlementTransactions(
+            settlementData.id
+          );
+
+        await SettlementService.processSettlement(
+          {
+            id: settlementData.id,
+            status: settlementData.status,
+            currency: settlementData.currency,
+            totalAmount: settlementData.total_amount,
+            totalFees: settlementData.total_fees,
+            netAmount: settlementData.effective_amount,
+            settledAt: settlementData.settlement_date,
+          },
+          transactions
         );
       }
-    }
 
-    /* ── Settlement webhook events ── */
-    if (parsed.event === "settlement.success" && parsed.raw.data) {
-      const { SettlementService } = await import(
-        "../services/SettlementService.js"
-      );
-      const { PaystackSettlementClient } = await import(
-        "../payments/paystack-settlement.js"
-      );
+      /* ── Refund webhook events ── */
+      if (parsed.event === "refund.processed" && parsed.raw.data) {
+        const refundData = parsed.raw.data as { id: number };
+        const { RefundService } = await import("../services/RefundService.js");
+        await RefundService.handleRefundSettled(`refund:${refundData.id}`);
+      }
 
-      const settlementData = parsed.raw.data as {
-        id: number;
-        status: string;
-        currency: string;
-        total_amount: number;
-        total_fees: number;
-        effective_amount: number;
-        settlement_date: string;
-      };
-
-      const transactions =
-        await PaystackSettlementClient.fetchSettlementTransactions(
-          settlementData.id
-        );
-
-      await SettlementService.processSettlement(
-        {
-          id: settlementData.id,
-          status: settlementData.status,
-          currency: settlementData.currency,
-          totalAmount: settlementData.total_amount,
-          totalFees: settlementData.total_fees,
-          netAmount: settlementData.effective_amount,
-          settledAt: settlementData.settlement_date,
-        },
-        transactions
-      );
-    }
-
-    if (parsed.event === "refund.processed" && parsed.raw.data) {
-      const refundData = parsed.raw.data as { id: number };
-      const { RefundService } = await import("../services/RefundService.js");
-      await RefundService.handleRefundSettled(`refund:${refundData.id}`);
+      /* ── Mark event as processed ── */
+      webhookEvent.status = "PROCESSED";
+      webhookEvent.processedAt = new Date();
+      await webhookEvent.save();
+    } catch (err) {
+      webhookEvent.status = "FAILED";
+      webhookEvent.error = err instanceof Error ? err.message : String(err);
+      await webhookEvent.save();
+      throw err;
     }
 
     res.status(200).json({ success: true });

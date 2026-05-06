@@ -105,3 +105,7 @@ export {
   ALLOWED_REFUND_TRANSITIONS,
   MAX_REQUEUE_COUNT,
 } from "./RefundRequest.js";
+export {
+  WebhookEvent,
+  type IWebhookEvent,
+} from "./WebhookEvent.js";
