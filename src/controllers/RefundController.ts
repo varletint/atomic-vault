@@ -165,4 +165,41 @@ export class RefundController {
       });
     }
   );
+
+  /* ── Admin ops endpoints ── */
+
+  static forceSettle = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params as { id: string };
+    const adminId = req.user?.userId;
+    if (!adminId) throw ValidationError("Admin not authenticated.");
+
+    const refund = await RefundRequest.findById(id);
+    if (!refund) throw NotFoundError("Refund request");
+    if (refund.status !== "GATEWAY_PENDING") {
+      throw ValidationError(
+        `Cannot force-settle refund in status ${refund.status}. Must be GATEWAY_PENDING.`
+      );
+    }
+
+    await RefundService.handleRefundSettled(
+      refund.providerRefundRef ?? `manual:${id}`
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Refund force-settled. Completion pipeline triggered.",
+    });
+  });
+
+  static drainOutbox = asyncHandler(async (_req: Request, res: Response) => {
+    const { OutboxProcessor } = await import(
+      "../services/OutboxProcessor.js"
+    );
+    OutboxProcessor.scheduleDrain();
+
+    res.status(200).json({
+      success: true,
+      message: "Outbox drain scheduled.",
+    });
+  });
 }

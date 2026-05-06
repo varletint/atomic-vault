@@ -52,6 +52,20 @@ router.post(
   RefundController.requeueRefund
 );
 
+router.post(
+  "/:id/force-settle",
+  authMiddleware,
+  requireRole("ADMIN"),
+  RefundController.forceSettle
+);
+
+router.post(
+  "/ops/drain-outbox",
+  authMiddleware,
+  requireRole("ADMIN"),
+  RefundController.drainOutbox
+);
+
 /* ── Customer endpoints ── */
 
 router.get(
