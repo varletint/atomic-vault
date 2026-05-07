@@ -1,38 +1,48 @@
-# Order Management System
+# 🛡️ Atomic Vault (Order Management System)
 
-A robust, high-integrity backend service architected for transactional reliability and strict ACID compliance.
+A robust, high-integrity backend service architected for transactional reliability, financial reconciliation, and strict ACID compliance. Built as a **Modular Monolith**, Atomic Vault powers e-commerce operations while maintaining double-entry accounting precision.
 
-## Features
+![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-43853D?style=for-the-badge&logo=node.js&logoColor=white)
+![Express.js](https://img.shields.io/badge/Express.js-404D59?style=for-the-badge)
+![MongoDB](https://img.shields.io/badge/MongoDB-4EA94B?style=for-the-badge&logo=mongodb&logoColor=white)
+![Vercel](https://img.shields.io/badge/Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)
 
-- **User Management**: Registration, authentication, password reset (OTP via email), FSM-based account lifecycle
-- **Product Catalog**: Product CRUD with inventory tracking
-- **Inventory Management**: FSM-based stock reservation system (AVAILABLE → RESERVED → COMMITTED)
-- **Shopping Cart**: Real-time inventory validation
-- **Order Processing**: FSM-based order lifecycle with automatic inventory management
-- **Payment Integration**: Idempotent payment processing with transaction tracking
+---
 
-## Tech Stack
+## ✨ Enterprise-Grade Features
 
-- **Runtime**: Node.js with TypeScript
-- **Framework**: Express.js
-- **Database**: MongoDB with Mongoose ODM
-- **Authentication**: JWT (access + refresh tokens)
-- **Deployment**: Vercel Serverless Functions
+### 🛒 E-Commerce Core
+- **Product & Inventory Separation**: Read-heavy product catalog is decoupled from write-heavy inventory tracking to prevent write contention.
+- **Optimistic Concurrency Control**: Prevents race conditions during high-traffic checkout events (e.g., flash sales) using MongoDB versioning keys (`__v`).
+- **Finite State Machines (FSM)**: Strict, modeled state transitions for Users, Orders, and Inventory to eliminate invalid data states.
 
-## Architecture Patterns
+### 💰 Financial & Ledger Engine
+- **Double-Entry Accounting**: Real-time, cryptographically sound ledger entries tracking all fund movements.
+- **Paystack Reconciliation**: Automated synchronization of internal ledgers with external gateway payouts.
+- **Automated Refund & Withdrawal Pipelines**: Deeply integrated into the FSM, ensuring funds are settled properly and tracked before mutating parent orders.
 
-- **Finite State Machines (FSM)**: User status, Order status, Inventory states
-- **ACID Transactions**: MongoDB sessions for data consistency
-- **Optimistic Concurrency Control**: Prevents race conditions in inventory
-- **Idempotency**: Prevents duplicate orders and payments
-- **Repository Pattern**: Service layer abstracts data access
+### 🛡️ Resilience & Fault Tolerance
+- **Transactional Outbox Pattern**: Guarantees *at-least-once* message delivery for background events, completely bypassing dual-write failures.
+- **ACID Transactions**: MongoDB Client Sessions are threaded through service methods. If an order fails mid-flight, inventory reservations roll back instantly.
+- **Idempotency & Circuit Breakers**: Built-in idempotency keys prevent duplicate payments/orders, alongside retry-with-backoff for external API calls.
 
-## Getting Started
+---
+
+## 🏗️ Architecture & Patterns
+
+- **Modular Monolith**: Organized strictly by domain (`Inventory`, `Product`, `Ledger`, `Settlement`).
+- **Embedded Daemons**: Contains in-process workers (`ReservationReaper`, `OutboxProcessor`, `SettlementSync`) to handle background processing seamlessly.
+- **Idempotency**: Prevents duplicate orders and payments on network retries.
+- **Repository Pattern**: Business logic (`services/`) abstracts data access from HTTP transport (`controllers/`).
+
+---
+
+## 🚀 Getting Started
 
 ### Prerequisites
-
 - Node.js 18+
-- MongoDB Atlas account (or local MongoDB)
+- MongoDB Atlas account (or local MongoDB with replica sets enabled for transactions)
 - npm or yarn
 
 ### Installation
@@ -53,7 +63,7 @@ cp .env.example .env
 # Run in development mode with hot reload
 npm run dev
 
-# Type check
+# Type check via TypeScript
 npm run type-check
 
 # Build for production
@@ -63,7 +73,7 @@ npm run build
 npm start
 ```
 
-### Environment Variables
+## ⚙️ Environment Variables
 
 See `.env.example` for all available configuration options. Key variables:
 
@@ -71,180 +81,84 @@ See `.env.example` for all available configuration options. Key variables:
 # Database
 MONGODB_URI=mongodb+srv://...
 
-# JWT
+# JWT & Auth
 JWT_ACCESS_SECRET=your-secret
 JWT_REFRESH_SECRET=your-secret
 JWT_ACCESS_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=7d
 
-# Password Reset (OTP via email)
+# Password Reset
 PASSWORD_RESET_OTP_TTL_MINUTES=15
 PASSWORD_RESET_MAX_OTP_ATTEMPTS=5
 PASSWORD_RESET_EMAIL_MAX_PER_HOUR=3
 
-# SMTP (optional in dev - OTP logged if unset)
+# SMTP Configuration
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_USER=your-email@example.com
 SMTP_PASS=your-password
-SMTP_FROM="Order System" <noreply@example.com>
+SMTP_FROM="Atomic Vault" <noreply@example.com>
 
-# Server
+# App Config
 FRONTEND_URL=http://localhost:5173
 NODE_ENV=development
 ```
 
-## API Endpoints
+---
 
-### Users (`/api/users`)
+## 🔌 API Ecosystem
 
-- `POST /register` - Create account
-- `POST /login` - Authenticate
-- `POST /refresh` - Refresh access token
-- `POST /forgot-password` - Request password reset OTP
-- `POST /reset-password` - Reset password with OTP
-- `GET /me` - Get current user profile (auth)
-- `GET /:userId` - Get user by ID (auth)
-- `PATCH /:userId/profile` - Update profile (auth)
-- `PATCH /:userId/verify-email` - Verify email (admin)
-- `PATCH /:userId/suspend` - Suspend account (admin)
-- `PATCH /:userId/reactivate` - Reactivate account (admin)
-- `PATCH /:userId/deactivate` - Deactivate account (admin)
+*Full documentation available in code via routing controllers.*
 
-### Products (`/api/products`)
+- **Users (`/api/users`)**: Registration, authentication (JWT/Cookies), FSM-based lifecycle (Unverified → Active → Suspended), MFA, OTP password resets.
+- **Products (`/api/products`)**: Catalog CRUD, variants, filters, pagination, SEO management.
+- **Inventory (`/api/inventory`)**: Atomic stock adjustments, reservation system, commitment.
+- **Orders (`/api/orders`)**: Registered & Guest checkout workflows, Paystack webhook integration, shipping status.
+- **Financials (`/api/wallets`, `/api/withdrawals`, `/api/settlements`, `/api/refunds`)**: Ledger tracking, wallet balances, admin payouts, and gateway reconciliation.
+- **Storage (`/api/storage`)**: File/image upload handling via AWS S3 interfaces.
 
-- `GET /` - List products (with filters, pagination)
-- `GET /categories` - Get categories
-- `GET /:productId` - Get product by ID
-- `GET /sku/:sku` - Get product by SKU
-- `POST /` - Create product (auth)
-- `PATCH /:productId` - Update product (auth)
-- `PATCH /:productId/deactivate` - Deactivate (auth)
-- `PATCH /:productId/reactivate` - Reactivate (auth)
+---
 
-### Inventory (`/api/inventory`)
+## ☁️ Deployment Strategy
 
-- `GET /:productId` - Get inventory
-- `PATCH /:productId/adjust` - Adjust stock (auth)
-- `PATCH /:productId/reserve` - Reserve stock (auth)
-- `PATCH /:productId/release` - Release reservation (auth)
-- `PATCH /:productId/commit` - Commit reservation (auth)
+Atomic Vault is fully compatible with **Vercel Serverless Functions**.
 
-### Cart (`/api/cart`)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/varletint/atomic-vault)
 
-- `GET /` - Get cart (auth)
-- `POST /items` - Add item (auth)
-- `PATCH /items/:productId` - Update quantity (auth)
-- `DELETE /items/:productId` - Remove item (auth)
-- `DELETE /` - Clear cart (auth)
+### Important Note for Vercel Deployments:
+> **Warning**: Atomic Vault runs background daemons (`OutboxProcessor`, `ReservationReaper`) via `setInterval`. Because Vercel Serverless Functions suspend immediately after responding to HTTP requests, **these daemons will not fire reliably in production on Vercel**. You must configure external cron jobs (e.g., Vercel Cron, GitHub Actions, or cron-job.org) to ping the respective API endpoints to trigger background processing.
 
-### Orders (`/api/orders`)
+---
 
-- `POST /` - Create order (auth)
-- `GET /` - Get user orders (auth)
-- `GET /:orderId` - Get order details (auth)
-- `PATCH /:orderId/confirm` - Confirm order (auth)
-- `PATCH /:orderId/ship` - Ship order (auth)
-- `PATCH /:orderId/deliver` - Deliver order (auth)
-- `PATCH /:orderId/cancel` - Cancel order (auth)
-- `PATCH /:orderId/fail` - Fail order (auth)
-- `POST /:orderId/payment` - Process payment (auth)
+## 🔄 Finite State Machines
 
-## Deployment to Vercel
+### User Lifecycle
+`UNVERIFIED` → `ACTIVE` ↔ `SUSPENDED` → `DEACTIVATED`
 
-### One-Click Deploy
+### Inventory States
+`AVAILABLE` → `RESERVED` → `COMMITTED` (or rolled back to `AVAILABLE`)
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/yourusername/order-system)
+### Order Flow
+`PENDING` → `CONFIRMED` → `SHIPPED` → `DELIVERED` 
+(Cancel flows to `CANCELLED`, Payment drop flows to `FAILED`)
 
-### Manual Deploy
+---
 
-```bash
-# Install Vercel CLI
-npm i -g vercel
-
-# Login
-vercel login
-
-# Deploy
-vercel --prod
-```
-
-### Environment Variables on Vercel
-
-Add these in Vercel Dashboard → Settings → Environment Variables:
-
-Required:
-
-- `MONGODB_URI`
-- `JWT_ACCESS_SECRET`
-- `JWT_REFRESH_SECRET`
-- `JWT_ACCESS_EXPIRES_IN`
-- `JWT_REFRESH_EXPIRES_IN`
-- `FRONTEND_URL`
-- `NODE_ENV=production`
-
-SMTP (required in production for password reset):
-
-- `SMTP_HOST`
-- `SMTP_PORT`
-- `SMTP_USER`
-- `SMTP_PASS`
-- `SMTP_FROM`
-
-Optional (with defaults):
-
-- `PASSWORD_RESET_OTP_TTL_MINUTES` (default: 15)
-- `PASSWORD_RESET_MAX_OTP_ATTEMPTS` (default: 5)
-- `PASSWORD_RESET_EMAIL_MAX_PER_HOUR` (default: 3)
-
-**Note**: In production, `SMTP_HOST` must be configured or password reset requests will fail. In development, OTPs are logged to console if SMTP is not configured.
-
-## FSM State Diagrams
-
-### User Status
-
-```
-UNVERIFIED → ACTIVE → SUSPENDED → DEACTIVATED
-              ↓          ↓
-         DEACTIVATED  DEACTIVATED
-```
-
-### Order Status
-
-```
-PENDING → CONFIRMED → SHIPPED → DELIVERED
-   ↓         ↓
-CANCELLED CANCELLED
-   ↓         ↓
-FAILED    FAILED
-```
-
-### Inventory State
-
-```
-AVAILABLE → RESERVED → COMMITTED
-              ↓
-          AVAILABLE (on cancel)
-```
-
-## Project Structure
+## 📂 Project Structure
 
 ```
 src/
-├── controllers/     # Request handlers
-├── middleware/      # Auth, error handling, async wrapper
-├── models/          # Mongoose schemas
-├── routes/          # Express routes
-├── services/        # Business logic with FSM
-├── utils/           # JWT, errors, helpers
-└── index.ts         # App entry point
-
-api/
-└── index.ts         # Vercel serverless handler
-
-vercel.json          # Vercel configuration
+├── config/          # Environment & core setup
+├── controllers/     # Express route handlers
+├── middleware/      # Auth, Error boundary, CSRF, Rate-limiting
+├── models/          # Mongoose Schemas (User, Ledger, Order, etc.)
+├── payments/        # Gateway integrations (Paystack)
+├── routes/          # Express route definitions
+├── schemas/         # Zod validation schemas
+├── services/        # Core business logic & domain handling
+├── utils/           # Utilities, loggers, circuit breakers
+└── workers/         # CLI execution scripts for daemons
 ```
 
-## License
-
+## 📄 License
 ISC
