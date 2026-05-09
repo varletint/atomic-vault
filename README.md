@@ -13,17 +13,20 @@ A robust, high-integrity backend service architected for transactional reliabili
 ## ✨ Enterprise-Grade Features
 
 ### 🛒 E-Commerce Core
+
 - **Product & Inventory Separation**: Read-heavy product catalog is decoupled from write-heavy inventory tracking to prevent write contention.
 - **Optimistic Concurrency Control**: Prevents race conditions during high-traffic checkout events (e.g., flash sales) using MongoDB versioning keys (`__v`).
-- **Finite State Machines (FSM)**: Strict, modeled state transitions for Users, Orders, and Inventory to eliminate invalid data states.
+- **Finite State Machines (FSM)**: Strict, modeled state transitions for Users, Orders, Refunds, and Inventory to eliminate invalid data states.
 
 ### 💰 Financial & Ledger Engine
-- **Double-Entry Accounting**: Real-time, cryptographically sound ledger entries tracking all fund movements.
+
+- **Double-Entry Accounting**: Every fund movement produces a balanced ledger entry — a debit on one account and a credit on another — so the books always reconcile.
 - **Paystack Reconciliation**: Automated synchronization of internal ledgers with external gateway payouts.
 - **Automated Refund & Withdrawal Pipelines**: Deeply integrated into the FSM, ensuring funds are settled properly and tracked before mutating parent orders.
 
 ### 🛡️ Resilience & Fault Tolerance
-- **Transactional Outbox Pattern**: Guarantees *at-least-once* message delivery for background events, completely bypassing dual-write failures.
+
+- **Transactional Outbox Pattern**: Guarantees _at-least-once_ message delivery for background events, completely bypassing dual-write failures.
 - **ACID Transactions**: MongoDB Client Sessions are threaded through service methods. If an order fails mid-flight, inventory reservations roll back instantly.
 - **Idempotency & Circuit Breakers**: Built-in idempotency keys prevent duplicate payments/orders, alongside retry-with-backoff for external API calls.
 
@@ -33,14 +36,145 @@ A robust, high-integrity backend service architected for transactional reliabili
 
 - **Modular Monolith**: Organized strictly by domain (`Inventory`, `Product`, `Ledger`, `Settlement`).
 - **Embedded Daemons**: Contains in-process workers (`ReservationReaper`, `OutboxProcessor`, `SettlementSync`) to handle background processing seamlessly.
-- **Idempotency**: Prevents duplicate orders and payments on network retries.
 - **Repository Pattern**: Business logic (`services/`) abstracts data access from HTTP transport (`controllers/`).
+
+---
+
+## 🧠 Key Design Decisions
+
+### Why the Outbox Pattern?
+
+Writing to MongoDB and dispatching a background event (e.g., send confirmation email, release inventory) are two separate operations. A process crash between them causes **silent event loss** — the order is saved but the side effect never fires. The outbox pattern solves this by writing the event _inside the same ACID transaction_ as the order mutation. A polling worker then reads and processes pending outbox entries independently, guaranteeing delivery without coupling the write path to background jobs.
+
+### Why Two Separate FSMs (Order + Refund)?
+
+Refund logic is complex enough to deserve its own state machine. Merging it into the order FSM would create a combinatorial explosion of invalid state combinations. A dedicated Refund FSM means refund lifecycle — approval routing, gateway retries, settlement — is fully isolated from order fulfillment. Each machine has a single responsibility and can fail independently without corrupting the other.
+
+### Why Threshold-Based Refund Routing?
+
+Not all refunds carry the same risk. Small refunds can be auto-approved instantly (low fraud exposure, high customer satisfaction). Large refunds above a configurable threshold are routed to `AWAITING_REVIEW` for manual admin approval before any gateway call is made. This prevents automated fraud exploitation while keeping the happy path fast.
+
+### Why Reapers?
+
+Network timeouts and partial failures leave FSM states stuck with no path forward. A `ReservationReaper` periodically scans for orders that entered `PAYMENT_PROCESSING` but never received a webhook confirmation — then either retries reconciliation or cancels and releases inventory. Without reapers, a single dropped webhook permanently locks stock.
+
+### Why Double-Entry Accounting?
+
+Single-column "balance update" approaches make auditing and reconciliation fragile — a bug silently adds or removes money with no paper trail. Double-entry ensures every transaction has two sides that must balance, making discrepancies immediately detectable. Example:
+
+| Event                       | Debit                | Credit               |
+| --------------------------- | -------------------- | -------------------- |
+| Customer pays for order     | `buyer_wallet`       | `platform_escrow`    |
+| Order confirmed, funds held | `platform_escrow`    | `settlement_pending` |
+| Seller payout issued        | `settlement_pending` | `seller_wallet`      |
+| Refund approved             | `seller_wallet`      | `buyer_wallet`       |
+
+If any entry doesn't balance, reconciliation catches it immediately.
+
+---
+
+## 🔄 Finite State Machines
+
+### Order Lifecycle
+
+```
+                        ┌─────────────────┐
+                        │     PENDING      │
+                        └────────┬────────┘
+                                 │ OrderPlaced (auto)
+                        ┌────────▼────────┐
+              ┌─────────│PAYMENT_PROCESSING│─────────┐
+              │         └────────┬────────┘         │
+        PaymentFailed            │ PaymentSucceeded  │
+              │            (auto/outbox)             │
+    ┌─────────▼──────┐   ┌──────▼──────────┐        │
+    │ PAYMENT_FAILED  │──▶│   CONFIRMED     │        │
+    └────────────────┘   └──────┬──────────┘        │
+                                │ FulfillmentAccepted│
+                         ┌──────▼──────────┐        │
+              ┌──────────│   PROCESSING    │──────── ┤
+              │          └──────┬──────────┘  CancelOrder
+          ON_HOLD               │ OrderShipped       │
+              │          ┌──────▼──────────┐  ┌─────▼───────┐
+              └─────────▶│    SHIPPED      │  │  CANCELLED  │
+                         └──────┬──────────┘  └──────┬──────┘
+                                │ DeliveryConfirmed   │ RefundIssued
+                         ┌──────▼──────────┐  ┌──────▼──────┐
+                         │   DELIVERED     │  │  REFUNDED   │
+                         └──────┬──────────┘  └─────────────┘
+                                │ ReturnRequested
+                         ┌──────▼──────────┐
+                         │ RETURN_REQUESTED │
+                         └──────┬──────────┘
+                       ┌────────┘ RefundIssued
+               ┌───────▼──────┐
+               │   RETURNING  │──── RefundIssued ────▶ REFUNDED
+               └──────────────┘
+```
+
+> **Auto** transitions are outbox-driven. **Manual** transitions require an operator API call.
+
+---
+
+### Refund Lifecycle
+
+```
+                   ┌──────────────┐
+                   │  REQUESTED   │──── ValidationFailed ────┐
+                   └──────┬───────┘                          │
+                           │ RefundRequested                  │
+                   ┌───────▼──────┐                          │
+                   │PENDING_APPROVAL│                         │
+                   └──────┬───────┘                          │
+           ┌──────────────┴──────────────────┐               │
+  RefundValidated                   RefundValidated           │
+  (auto-approve)                  (> threshold)               │
+           │                             ┌───▼──────────────┐ │
+    ┌──────▼──────┐         AdminApproves│ AWAITING_REVIEW  │◀┘
+    │  PROCESSING │◀────────────────────┘└────────┬─────────┘
+    └──────┬──────┘   GatewayFailure /             │ AdminRejects
+           │           AdminRequeues               │
+    GatewayTimeout                          ┌──────▼───────┐
+           │                                │   REJECTED   │
+    ┌──────▼──────┐                         └──────────────┘
+    │   RETRYING  │──── RetryExhausted ────▶┌──────────────┐
+    └──────┬──────┘                         │    FAILED    │
+           │ AdminRequeues                  └──────────────┘
+           └──────────────▶ PROCESSING
+                   │
+           RefundApproved
+                   │
+    ┌──────────────▼─────┐
+    │   GATEWAY_PENDING  │
+    └──────────┬─────────┘
+               │ WebhookSettled
+          ┌────▼──────┐
+          │  SETTLED  │
+          └────┬──────┘
+               │ RefundSettled
+          ┌────▼──────────┐
+          │   COMPLETED   │
+          └───────────────┘
+```
+
+> Reapers monitor `RETRYING` and `GATEWAY_PENDING` states for stalled transitions.
+
+---
+
+### User Lifecycle
+
+`UNVERIFIED` → `ACTIVE` ↔ `SUSPENDED` → `DEACTIVATED`
+
+### Inventory States
+
+`AVAILABLE` → `RESERVED` → `COMMITTED` (or rolled back to `AVAILABLE` on cancel/timeout)
 
 ---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
+
 - Node.js 18+
 - MongoDB Atlas account (or local MongoDB with replica sets enabled for transactions)
 - npm or yarn
@@ -108,7 +242,7 @@ NODE_ENV=development
 
 ## 🔌 API Ecosystem
 
-*Full documentation available in code via routing controllers.*
+_Full documentation available in code via routing controllers._
 
 - **Users (`/api/users`)**: Registration, authentication (JWT/Cookies), FSM-based lifecycle (Unverified → Active → Suspended), MFA, OTP password resets.
 - **Products (`/api/products`)**: Catalog CRUD, variants, filters, pagination, SEO management.
@@ -125,22 +259,9 @@ Atomic Vault is fully compatible with **Vercel Serverless Functions**.
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/varletint/atomic-vault)
 
-### Important Note for Vercel Deployments:
+### Important Note for Vercel Deployments
+
 > **Warning**: Atomic Vault runs background daemons (`OutboxProcessor`, `ReservationReaper`) via `setInterval`. Because Vercel Serverless Functions suspend immediately after responding to HTTP requests, **these daemons will not fire reliably in production on Vercel**. You must configure external cron jobs (e.g., Vercel Cron, GitHub Actions, or cron-job.org) to ping the respective API endpoints to trigger background processing.
-
----
-
-## 🔄 Finite State Machines
-
-### User Lifecycle
-`UNVERIFIED` → `ACTIVE` ↔ `SUSPENDED` → `DEACTIVATED`
-
-### Inventory States
-`AVAILABLE` → `RESERVED` → `COMMITTED` (or rolled back to `AVAILABLE`)
-
-### Order Flow
-`PENDING` → `CONFIRMED` → `SHIPPED` → `DELIVERED` 
-(Cancel flows to `CANCELLED`, Payment drop flows to `FAILED`)
 
 ---
 
@@ -161,4 +282,5 @@ src/
 ```
 
 ## 📄 License
+
 ISC
