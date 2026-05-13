@@ -13,6 +13,10 @@ import { renderOrderCompletedEmail } from "./templates/orderCompletedEmail.js";
 import { renderOrderDeliveredEmail } from "./templates/orderDeliveredEmail.js";
 import { renderOrderShippedEmail } from "./templates/orderShippedEmail.js";
 import { renderOrderCancelledEmail } from "./templates/orderCancelledEmail.js";
+import { renderOrderPaymentFailedEmail } from "./templates/orderPaymentFailedEmail.js";
+import { renderOrderFailedEmail } from "./templates/orderFailedEmail.js";
+import { renderRefundCompletedEmail } from "./templates/refundCompletedEmail.js";
+import { formatMinorCurrency } from "../utils/currency.js";
 
 export class OrderNotificationService {
   static async handleOrderConfirmed(payload: {
@@ -91,6 +95,78 @@ export class OrderNotificationService {
     await this.sendAndLog({
       orderId: order._id.toString(),
       type: "ORDER_CANCELLED" as any,
+      to: customerEmail,
+      email,
+    });
+  }
+
+  static async handleOrderPaymentFailed(payload: {
+    orderId: string;
+    paymentReference: string;
+    failureReason: string;
+  }): Promise<void> {
+    const order = await Order.findById(payload.orderId).lean<IOrder | null>();
+    if (!order) throw NotFoundError("Order");
+
+    const customerEmail = await this.resolveCustomerEmail(order);
+    const emailData = buildOrderEmailData(order);
+
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+    const retryUrl = `${frontendUrl}/orders/${order._id.toString()}/payment`;
+
+    const email = renderOrderPaymentFailedEmail(
+      emailData,
+      payload.failureReason,
+      retryUrl
+    );
+
+    await this.sendAndLog({
+      orderId: order._id.toString(),
+      type: "ORDER_PAYMENT_FAILED",
+      to: customerEmail,
+      email,
+    });
+  }
+
+  static async handleOrderFailed(payload: {
+    orderId: string;
+    reason: string;
+  }): Promise<void> {
+    const order = await Order.findById(payload.orderId).lean<IOrder | null>();
+    if (!order) throw NotFoundError("Order");
+
+    const customerEmail = await this.resolveCustomerEmail(order);
+    const emailData = buildOrderEmailData(order);
+    const email = renderOrderFailedEmail(emailData, payload.reason);
+
+    await this.sendAndLog({
+      orderId: order._id.toString(),
+      type: "ORDER_FAILED",
+      to: customerEmail,
+      email,
+    });
+  }
+
+  static async handleRefundCompleted(payload: {
+    orderId: string;
+    refundAmount?: number;
+    currency?: string;
+  }): Promise<void> {
+    const order = await Order.findById(payload.orderId).lean<IOrder | null>();
+    if (!order) throw NotFoundError("Order");
+
+    const customerEmail = await this.resolveCustomerEmail(order);
+    const emailData = buildOrderEmailData(order);
+
+    const refundAmountStr = payload.refundAmount
+      ? formatMinorCurrency(payload.refundAmount)
+      : undefined;
+
+    const email = renderRefundCompletedEmail(emailData, refundAmountStr);
+
+    await this.sendAndLog({
+      orderId: order._id.toString(),
+      type: "REFUND_COMPLETED",
       to: customerEmail,
       email,
     });
