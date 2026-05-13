@@ -65,10 +65,13 @@ export const noteSchema = z.object({
 export const addTrackingEventSchema = z.object({
   status: z.enum([
     "PENDING",
+    "PAYMENT_PROCESSING",
+    "PAYMENT_FAILED",
     "CONFIRMED",
     "SHIPPED",
     "DELIVERED",
     "CANCELLED",
+    "REFUNDED",
     "FAILED",
   ]),
   description: z.string().min(1, "Description is required"),
@@ -81,10 +84,13 @@ export const adminOrderQuerySchema = z.object({
   status: z
     .enum([
       "PENDING",
+      "PAYMENT_PROCESSING",
+      "PAYMENT_FAILED",
       "CONFIRMED",
       "SHIPPED",
       "DELIVERED",
       "CANCELLED",
+      "REFUNDED",
       "FAILED",
     ])
     .optional(),
