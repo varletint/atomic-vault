@@ -8,6 +8,8 @@ import {
   Transaction,
   LedgerEntry,
   AuditLog,
+  Order,
+  type OrderStatus,
   type ILedgerActorRef,
 } from "../models/index.js";
 import { LedgerService } from "./LedgerService.js";
@@ -132,7 +134,7 @@ export class RefundService {
   }
 
   /**
-   * Validate the refund request (outbox handler for REFUND_REQUESTED).
+   * Validate the refund request from (outbox handler for REFUND_REQUESTED).
    */
   static async validateRefund(refundRequestId: string): Promise<void> {
     const session = await mongoose.startSession();
@@ -144,7 +146,7 @@ export class RefundService {
       if (!refund) throw ValidationError("Refund request not found.");
       if (refund.status !== "REQUESTED") {
         await session.commitTransaction();
-        return; // idempotent
+        return;
       }
 
       const tx = await Transaction.findById(
@@ -195,7 +197,7 @@ export class RefundService {
   }
 
   /**
-   * Evaluate auto-approval (outbox handler for REFUND_VALIDATED).
+   * Evaluate auto-approval from (outbox handler for REFUND_VALIDATED).
    */
   static async evaluateApproval(refundRequestId: string): Promise<void> {
     const session = await mongoose.startSession();
@@ -210,8 +212,9 @@ export class RefundService {
         return;
       }
 
+      // Auto-approve: transition to PROCESSING if requested refund amount is less than the approval
+      // threshold amount(ledger posts at settlement)
       if (refund.refundAmount <= AUTO_APPROVE_THRESHOLD_KOBO) {
-        // Auto-approve: transition to PROCESSING (ledger posts at settlement)
         await transitionRefund(refund, "PROCESSING", session, {
           note: `Auto-approved (≤ ${formatMinorCurrency(
             AUTO_APPROVE_THRESHOLD_KOBO
@@ -616,6 +619,20 @@ export class RefundService {
         note: "Refund completed — ledger posted, customer notified",
         actor: { type: "SYSTEM" },
       });
+
+      // Transition the parent order CANCELLED → REFUNDED
+      const order = await Order.findById(refund.orderId).session(session);
+      if (order && order.status === "CANCELLED") {
+        order.status = "REFUNDED" as OrderStatus;
+        order.statusHistory.push({
+          status: "REFUNDED" as OrderStatus,
+          timestamp: new Date(),
+          note: `Refund completed — ${formatMinorCurrency(
+            refund.refundAmount
+          )} returned to customer`,
+        });
+        await order.save({ session });
+      }
 
       await OutboxService.enqueue(
         {
