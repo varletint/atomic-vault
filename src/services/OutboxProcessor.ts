@@ -71,6 +71,27 @@ const handlerRegistry: {
     });
   },
 
+  ORDER_PAYMENT_FAILED: async (payload) => {
+    if (!payload.orderId) {
+      throw new Error("ORDER_PAYMENT_FAILED outbox payload missing orderId.");
+    }
+    await OrderNotificationService.handleOrderPaymentFailed({
+      orderId: payload.orderId,
+      paymentReference: payload.paymentReference,
+      failureReason: payload.failureReason,
+    });
+  },
+
+  ORDER_FAILED: async (payload) => {
+    if (!payload.orderId) {
+      throw new Error("ORDER_FAILED outbox payload missing orderId.");
+    }
+    await OrderNotificationService.handleOrderFailed({
+      orderId: payload.orderId,
+      reason: payload.reason,
+    });
+  },
+
   INVENTORY_LOW_STOCK: async (payload) => {
     logger.warn("Low stock alert", {
       productId: payload.productId,
@@ -185,6 +206,9 @@ const handlerRegistry: {
   },
 
   REFUND_COMPLETED: async (payload) => {
+    if (!payload.refundRequestId) {
+      throw new Error("REFUND_COMPLETED payload missing refundRequestId.");
+    }
     logger.info("[Refund] Completed", {
       refundRequestId: payload.refundRequestId,
     });
