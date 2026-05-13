@@ -8,6 +8,18 @@ function reservationTtlMs(): number {
   return Number.isFinite(n) && n > 0 ? n : 15 * 60_000;
 }
 
+/**
+ * Statuses where inventory is RESERVED and needs reaping if stale.
+ * PENDING        → never reached the gateway   → CANCELLED (release)
+ * PAYMENT_PROCESSING → gateway timeout / abandon → PAYMENT_FAILED (release)
+ * PAYMENT_FAILED → customer never retried       → CANCELLED (release)
+ */
+const REAPABLE_STATUSES: OrderStatus[] = [
+  "PENDING",
+  "PAYMENT_PROCESSING",
+  "PAYMENT_FAILED",
+];
+
 export type RunReservationReaperOptions = {
   quiet?: boolean;
 };
@@ -37,7 +49,7 @@ export class ReservationReaperService {
     const cutoff = new Date(Date.now() - ttlMs);
 
     const staleOrders = await Order.find({
-      status: "PENDING",
+      status: { $in: REAPABLE_STATUSES },
       createdAt: { $lte: cutoff },
     }).lean();
 
@@ -49,7 +61,9 @@ export class ReservationReaperService {
     }
 
     if (!opts.quiet) {
-      logger.info("Stale PENDING orders found", { count: staleOrders.length });
+      logger.info("Stale orders with reserved inventory found", {
+        count: staleOrders.length,
+      });
     }
 
     let released = 0;
@@ -61,7 +75,10 @@ export class ReservationReaperService {
 
       try {
         const liveOrder = await Order.findById(order._id).session(session);
-        if (!liveOrder || liveOrder.status !== "PENDING") {
+        if (
+          !liveOrder ||
+          !REAPABLE_STATUSES.includes(liveOrder.status as OrderStatus)
+        ) {
           await session.abortTransaction();
           continue;
         }
@@ -74,11 +91,20 @@ export class ReservationReaperService {
           );
         }
 
-        liveOrder.status = "FAILED" as OrderStatus;
+        // PAYMENT_PROCESSING → PAYMENT_FAILED (recoverable, but TTL expired)
+        // PENDING / PAYMENT_FAILED → CANCELLED (terminal for this order)
+        const nextStatus: OrderStatus =
+          liveOrder.status === "PAYMENT_PROCESSING"
+            ? "PAYMENT_FAILED"
+            : "CANCELLED";
+
+        liveOrder.status = nextStatus;
         liveOrder.statusHistory.push({
-          status: "FAILED" as OrderStatus,
+          status: nextStatus,
           timestamp: new Date(),
-          note: "Reservation expired — auto-released by reaper",
+          note: `Reservation expired (${liveOrder.status} > ${Math.round(
+            ttlMs / 60_000
+          )}min) — auto-released by reaper`,
         });
 
         await liveOrder.save({ session });
