@@ -27,6 +27,7 @@ import {
   withdrawalRoutes,
   settlementRoutes,
   refundRoutes,
+  auditRoutes,
 } from "./routes/index.js";
 
 const app = express();
@@ -128,6 +129,7 @@ app.use("/api/wallets", walletRoutes);
 app.use("/api/withdrawals", withdrawalRoutes);
 app.use("/api/settlements", settlementRoutes);
 app.use("/api/refunds", refundRoutes);
+app.use("/api/audit-logs", auditRoutes);
 app.use("/api/storage", storageRoutes);
 app.use("/api/admin/dashboard", dashboardRoutes);
 
