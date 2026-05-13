@@ -117,9 +117,6 @@ export class OrderController {
 
       let order;
       switch (status) {
-        case "CONFIRMED":
-          order = await OrderService.confirmOrder(orderId);
-          break;
         case "SHIPPED":
           order = await OrderService.shipOrder(orderId, note);
           break;
@@ -138,6 +135,13 @@ export class OrderController {
             reason || note || "Marked failed by admin"
           );
           break;
+        case "CONFIRMED":
+        case "PAYMENT_PROCESSING":
+        case "PAYMENT_FAILED":
+        case "REFUNDED":
+          throw ValidationError(
+            `Status ${status} is driven automatically by the payment/refund pipeline and cannot be set manually via this endpoint.`
+          );
         default:
           throw ValidationError(`Invalid target status: ${status}`);
       }
