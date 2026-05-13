@@ -104,11 +104,14 @@ function validateGuestContact(contact: IGuestContact): IGuestContact {
 }
 
 const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  PENDING: ["CONFIRMED", "CANCELLED", "FAILED"],
+  PENDING: ["PAYMENT_PROCESSING", "CANCELLED"],
+  PAYMENT_PROCESSING: ["CONFIRMED", "PAYMENT_FAILED", "FAILED"],
+  PAYMENT_FAILED: ["PAYMENT_PROCESSING", "CANCELLED"],
   CONFIRMED: ["SHIPPED", "CANCELLED"],
-  SHIPPED: ["DELIVERED", "CANCELLED"],
+  SHIPPED: ["DELIVERED"],
   DELIVERED: [],
-  CANCELLED: [],
+  CANCELLED: ["REFUNDED"],
+  REFUNDED: [],
   FAILED: [],
 };
 
@@ -119,8 +122,34 @@ function assertValidTransition(current: OrderStatus, next: OrderStatus): void {
   }
 }
 
+/**
+ * Transitions that are driven by outbox/domain events (automated).
+ * Use assertAutoTransition in event consumers to prevent misrouted events
+ * from accidentally driving a manual transition.
+ */
+export const AUTO_TRANSITIONS = new Set<`${OrderStatus}->${OrderStatus}`>([
+  "PENDING->PAYMENT_PROCESSING",
+  "PAYMENT_PROCESSING->CONFIRMED",
+  "PAYMENT_PROCESSING->PAYMENT_FAILED",
+  "PAYMENT_PROCESSING->FAILED",
+  "CANCELLED->REFUNDED",
+]);
+
+export function assertAutoTransition(
+  from: OrderStatus,
+  to: OrderStatus
+): void {
+  if (!AUTO_TRANSITIONS.has(`${from}->${to}`)) {
+    throw new Error(
+      `Transition ${from}→${to} is not outbox-driven — use the command handler, not the event consumer`
+    );
+  }
+}
+
 const ALLOWED_TX_TRANSITIONS: Record<TransactionStatus, TransactionStatus[]> = {
-  INITIATED: ["RESERVED", "FAILED"],
+  INITIATED: ["PROCESSING", "FAILED"],
+  // RESERVED was never used in practice — INITIATED goes straight to PROCESSING.
+  // Kept in the map for backwards compatibility with any existing DB documents.
   RESERVED: ["PROCESSING", "FAILED"],
   PROCESSING: ["UNKNOWN", "CONFIRMED", "FAILED"],
   UNKNOWN: ["CONFIRMED", "FAILED"],
@@ -525,32 +554,51 @@ export class OrderService {
         { session }
       );
 
+      // Enqueue outbox events INSIDE the transaction so the status
+      // change and the event write are atomic. If enqueue fails,
+      // the entire transaction rolls back.
+      if (nextStatus === "DELIVERED") {
+        await OutboxService.enqueue(
+          {
+            type: "ORDER_DELIVERED",
+            dedupeKey: `order:${orderId}:delivered`,
+            payload: { orderId },
+          },
+          session
+        );
+      } else if (nextStatus === "CONFIRMED") {
+        await OutboxService.enqueue(
+          {
+            type: "ORDER_CONFIRMED",
+            dedupeKey: `order:${orderId}:confirmed`,
+            payload: { orderId },
+          },
+          session
+        );
+      } else if (nextStatus === "SHIPPED") {
+        await OutboxService.enqueue(
+          {
+            type: "ORDER_SHIPPED",
+            dedupeKey: `order:${orderId}:shipped`,
+            payload: { orderId, note },
+          },
+          session
+        );
+      } else if (nextStatus === "REFUNDED") {
+        await OutboxService.enqueue(
+          {
+            type: "ORDER_REFUNDED" as any,
+            dedupeKey: `order:${orderId}:refunded`,
+            payload: { orderId },
+          },
+          session
+        );
+      }
+
       await order.save({ session });
       await session.commitTransaction();
 
-      if (nextStatus === "DELIVERED") {
-        await OutboxService.enqueue({
-          type: "ORDER_DELIVERED",
-          dedupeKey: `order:${orderId}:delivered`,
-          payload: { orderId },
-        });
-        OutboxProcessor.scheduleDrain();
-      } else if (nextStatus === "CONFIRMED") {
-        await OutboxService.enqueue({
-          type: "ORDER_CONFIRMED",
-          dedupeKey: `order:${orderId}:confirmed`,
-          payload: { orderId },
-        });
-        OutboxProcessor.scheduleDrain();
-      } else if (nextStatus === "SHIPPED") {
-        await OutboxService.enqueue({
-          type: "ORDER_SHIPPED",
-          dedupeKey: `order:${orderId}:shipped`,
-          payload: { orderId, note },
-        });
-        OutboxProcessor.scheduleDrain();
-      }
-
+      OutboxProcessor.scheduleDrain();
       return order.toObject() as IOrder;
     } catch (error) {
       await session.abortTransaction();
@@ -560,11 +608,16 @@ export class OrderService {
     }
   }
 
-  static async confirmOrder(orderId: string): Promise<IOrder> {
-    return OrderService.transitionStatus(
-      orderId,
-      "CONFIRMED",
-      "Payment confirmed"
+  /**
+   * @deprecated Use verifyPayment for payment-driven confirmation.
+   * This method is intentionally blocked — calling it directly would
+   * produce a CONFIRMED order with no ledger entry, no inventory
+   * commit, and no payment data. Route all confirmations through
+   * verifyPayment or confirmManualPayment instead.
+   */
+  static async confirmOrder(_orderId: string): Promise<IOrder> {
+    throw ValidationError(
+      "confirmOrder is disabled. Use verifyPayment for gateway payments or confirmManualPayment for offline payments."
     );
   }
 
@@ -596,7 +649,14 @@ export class OrderService {
         quantity: i.quantity,
       }));
 
-      if (previousStatus === "PENDING") {
+      // For PENDING, PAYMENT_PROCESSING, or PAYMENT_FAILED the inventory
+      // is still RESERVED — release the reservations.
+      // For CONFIRMED the inventory has been COMMITTED — restore it.
+      if (
+        previousStatus === "PENDING" ||
+        previousStatus === "PAYMENT_PROCESSING" ||
+        previousStatus === "PAYMENT_FAILED"
+      ) {
         await InventoryService.bulkReleaseReservations(items, session);
       } else {
         await InventoryService.bulkRestoreCommittedStock(items, session);
@@ -624,7 +684,12 @@ export class OrderService {
         session
       );
 
-      if (previousStatus !== "PENDING") {
+      // Only create a refund request when money was actually captured
+      if (
+        previousStatus !== "PENDING" &&
+        previousStatus !== "PAYMENT_PROCESSING" &&
+        previousStatus !== "PAYMENT_FAILED"
+      ) {
         await RefundService.createRefundRequest({
           orderId,
           userId: order.user?.toString() ?? null,
@@ -642,7 +707,7 @@ export class OrderService {
 
   /**
    * Customer-initiated cancellation request.
-   * Restricted to PENDING and CONFIRMED orders only.
+   * Allowed from PENDING, PAYMENT_FAILED, and CONFIRMED orders.
    */
   static async requestCancellation(
     orderId: string,
@@ -656,15 +721,24 @@ export class OrderService {
       throw ValidationError("You can only cancel your own orders.");
     }
 
-    if (order.status !== "PENDING" && order.status !== "CONFIRMED") {
+    const cancellableStatuses: OrderStatus[] = [
+      "PENDING",
+      "PAYMENT_FAILED",
+      "CONFIRMED",
+    ];
+    if (!cancellableStatuses.includes(order.status)) {
       throw ValidationError(
-        `Cannot cancel order in status ${order.status}. Only PENDING and CONFIRMED orders can be cancelled.`
+        `Cannot cancel order in status ${order.status}. Only PENDING, PAYMENT_FAILED, and CONFIRMED orders can be cancelled.`
       );
     }
 
     return OrderService.cancelOrder(orderId, reason);
   }
 
+  /**
+   * Terminal failure — unrecoverable infrastructure errors only.
+   * For recoverable payment failures, use PAYMENT_FAILED via verifyPayment.
+   */
   static async failOrder(orderId: string, reason: string): Promise<IOrder> {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -675,6 +749,8 @@ export class OrderService {
 
       assertValidTransition(order.status, "FAILED");
 
+      // Release reservations — inventory is still RESERVED at this point
+      // because FAILED can only be reached from PAYMENT_PROCESSING
       for (const item of order.items) {
         await InventoryService.releaseReservation(
           item.product.toString(),
@@ -690,8 +766,24 @@ export class OrderService {
         note: reason,
       });
 
+      await TrackingEvent.create(
+        [{ orderId: order._id, status: "FAILED", description: reason }],
+        { session }
+      );
+
+      await OutboxService.enqueue(
+        {
+          type: "ORDER_FAILED",
+          dedupeKey: `order:${orderId}:failed`,
+          payload: { orderId, reason },
+        },
+        session
+      );
+
       await order.save({ session });
       await session.commitTransaction();
+
+      OutboxProcessor.scheduleDrain();
       return order.toObject() as IOrder;
     } catch (error) {
       await session.abortTransaction();
@@ -719,11 +811,9 @@ export class OrderService {
       const order = await Order.findById(orderId).session(session);
       if (!order) throw NotFoundError("Order");
 
-      if (order.status !== "PENDING") {
-        throw ValidationError(
-          `Cannot process payment for order with status ${order.status}.`
-        );
-      }
+      // FSM enforces that only PENDING and PAYMENT_FAILED can transition
+      // to PAYMENT_PROCESSING. This is the single source of truth.
+      assertValidTransition(order.status, "PAYMENT_PROCESSING");
 
       if (isGuestOrder(order)) {
         if (!GUEST_PAYMENT_SET.has(paymentMethod)) {
@@ -810,9 +900,21 @@ export class OrderService {
         })
       );
 
+      assertValidTxTransition(transaction.status, "PROCESSING");
       transaction.status = "PROCESSING";
       transaction.providerRef = initResult.providerRef;
       await transaction.save({ session });
+
+      // Transition order to PAYMENT_PROCESSING so we know
+      // the gateway has been called and payment is in-flight
+      assertValidTransition(order.status, "PAYMENT_PROCESSING");
+      order.status = "PAYMENT_PROCESSING";
+      order.statusHistory.push({
+        status: "PAYMENT_PROCESSING" as const,
+        timestamp: new Date(),
+        note: "Redirected to payment gateway",
+      });
+      await order.save({ session });
 
       await session.commitTransaction();
 
@@ -961,7 +1063,11 @@ export class OrderService {
           session
         );
       } else {
-        assertValidTransition(order.status, "FAILED");
+        // Payment declined/abandoned — use PAYMENT_FAILED (recoverable).
+        // Inventory stays RESERVED so the customer can retry without
+        // re-reserving. If they abandon entirely, the ReservationReaper
+        // will clean up after the TTL expires.
+        assertValidTransition(order.status, "PAYMENT_FAILED");
         assertValidTxTransition(freshClaimed.status, "FAILED");
 
         freshClaimed.status = "FAILED";
@@ -985,33 +1091,42 @@ export class OrderService {
           },
         });
 
-        for (const item of order.items) {
-          await InventoryService.releaseReservation(
-            item.product.toString(),
-            item.quantity,
-            session
-          );
-        }
-
-        order.status = "FAILED";
+        order.status = "PAYMENT_FAILED";
         const failureNote = freshClaimed.failureReason || "Payment failed";
         order.statusHistory.push({
-          status: "FAILED",
+          status: "PAYMENT_FAILED" as const,
           timestamp: new Date(),
           note: failureNote,
         });
         await TrackingEvent.create(
-          [{ orderId: order._id, status: "FAILED", description: failureNote }],
+          [
+            {
+              orderId: order._id,
+              status: "PAYMENT_FAILED",
+              description: failureNote,
+            },
+          ],
           { session }
+        );
+
+        await OutboxService.enqueue(
+          {
+            type: "ORDER_PAYMENT_FAILED",
+            dedupeKey: `order:${order._id.toString()}:payment_failed:${reference}`,
+            payload: {
+              orderId: order._id.toString(),
+              paymentReference: reference,
+              failureReason: failureNote,
+            },
+          },
+          session
         );
       }
 
       await order.save({ session });
       await session.commitTransaction();
 
-      if (result.success) {
-        OutboxProcessor.scheduleDrain();
-      }
+      OutboxProcessor.scheduleDrain();
 
       return {
         order: order.toObject() as IOrder,
@@ -1039,13 +1154,20 @@ export class OrderService {
       .lean<ITrackingEvent[]>();
   }
 
+  /**
+   * Append a tracking event for logistics/delivery tracking.
+   *
+   * This method MUST NOT drive order status transitions.
+   * If a webhook needs to advance order state, route it through
+   * the named methods: shipOrder(), deliverOrder(), etc.
+   */
   static async addTrackingEvent(
     orderId: string,
     status: OrderStatus,
     description: string,
     location?: string
   ): Promise<ITrackingEvent> {
-    const order = await Order.findById(orderId);
+    const order = await Order.findById(orderId).lean();
     if (!order) {
       throw NotFoundError("Order");
     }
@@ -1067,17 +1189,6 @@ export class OrderService {
     const event = (await TrackingEvent.create(
       eventData
     )) as unknown as ITrackingEvent;
-
-    if (order.status !== status) {
-      assertValidTransition(order.status, status);
-      order.status = status;
-      order.statusHistory.push({
-        status,
-        timestamp: new Date(),
-        note: description,
-      });
-      await order.save();
-    }
 
     return event.toObject() as ITrackingEvent;
   }
