@@ -2,10 +2,13 @@ import mongoose, { Schema, type Document, type Types } from "mongoose";
 
 export const OrderStatus = {
   PENDING: "PENDING",
+  PAYMENT_PROCESSING: "PAYMENT_PROCESSING",
+  PAYMENT_FAILED: "PAYMENT_FAILED",
   CONFIRMED: "CONFIRMED",
   SHIPPED: "SHIPPED",
   DELIVERED: "DELIVERED",
   CANCELLED: "CANCELLED",
+  REFUNDED: "REFUNDED",
   FAILED: "FAILED",
 } as const;
 export type OrderStatus = (typeof OrderStatus)[keyof typeof OrderStatus];
@@ -112,10 +115,13 @@ const statusHistorySchema = new Schema(
       type: String,
       enum: [
         "PENDING",
+        "PAYMENT_PROCESSING",
+        "PAYMENT_FAILED",
         "CONFIRMED",
         "SHIPPED",
         "DELIVERED",
         "CANCELLED",
+        "REFUNDED",
         "FAILED",
       ],
       required: true,
@@ -221,10 +227,13 @@ const orderSchema = new Schema<IOrder>(
       type: String,
       enum: [
         "PENDING",
+        "PAYMENT_PROCESSING",
+        "PAYMENT_FAILED",
         "CONFIRMED",
         "SHIPPED",
         "DELIVERED",
         "CANCELLED",
+        "REFUNDED",
         "FAILED",
       ],
       default: "PENDING",
@@ -243,6 +252,7 @@ const orderSchema = new Schema<IOrder>(
   },
   {
     timestamps: true,
+    optimisticConcurrency: true,
     toJSON: { virtuals: true },
     toObject: { virtuals: true },
   }

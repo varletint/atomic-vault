@@ -5,7 +5,10 @@ export type NotificationType =
   | "ORDER_CONFIRMED"
   | "ORDER_DELIVERED"
   | "ORDER_SHIPPED"
-  | "ORDER_CANCELLED";
+  | "ORDER_CANCELLED"
+  | "ORDER_PAYMENT_FAILED"
+  | "ORDER_FAILED"
+  | "REFUND_COMPLETED";
 export type NotificationStatus = "SENT" | "FAILED";
 
 export interface INotificationLog extends Document {
@@ -38,6 +41,9 @@ const notificationLogSchema = new Schema<INotificationLog>(
         "ORDER_DELIVERED",
         "ORDER_SHIPPED",
         "ORDER_CANCELLED",
+        "ORDER_PAYMENT_FAILED",
+        "ORDER_FAILED",
+        "REFUND_COMPLETED",
       ],
       required: true,
       index: true,

@@ -7,6 +7,8 @@ export type OutboxEventType =
   | "ORDER_DELIVERED"
   | "ORDER_SHIPPED"
   | "ORDER_CANCELLED"
+  | "ORDER_PAYMENT_FAILED"
+  | "ORDER_FAILED"
   | "INVENTORY_LOW_STOCK"
   | "TRANSACTION_POSTED"
   | "WALLET_UPDATED"
@@ -27,6 +29,12 @@ export type OutboxPayloadMap = {
   ORDER_DELIVERED: { orderId: string };
   ORDER_SHIPPED: { orderId: string; note?: string };
   ORDER_CANCELLED: { orderId: string; reason?: string };
+  ORDER_PAYMENT_FAILED: {
+    orderId: string;
+    paymentReference: string;
+    failureReason: string;
+  };
+  ORDER_FAILED: { orderId: string; reason: string };
   INVENTORY_LOW_STOCK: {
     productId: string;
     stock: number;
@@ -100,6 +108,8 @@ const outboxEventSchema = new Schema<IOutboxEvent>(
         "ORDER_DELIVERED",
         "ORDER_SHIPPED",
         "ORDER_CANCELLED",
+        "ORDER_PAYMENT_FAILED",
+        "ORDER_FAILED",
         "INVENTORY_LOW_STOCK",
         "TRANSACTION_POSTED",
         "WALLET_UPDATED",
